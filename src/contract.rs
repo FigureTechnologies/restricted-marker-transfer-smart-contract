@@ -8,7 +8,7 @@ use crate::msg::{CountResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
 use crate::state::{State, STATE};
 
 // version info for migration info
-const CONTRACT_NAME: &str = "crates.io:{{project-name}}";
+const CONTRACT_NAME: &str = "crates.io:restricted-marker-transfer";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
