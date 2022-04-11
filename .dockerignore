@@ -1,0 +1,11 @@
+build
+scripts
+gradle
+.idea
+.gradle
+.github
+.dockerignore
+.gitignore
+gradlew
+gradlew.bat
+.DS_STORE
