@@ -11,7 +11,7 @@ use provwasm_std::{
 use cw2::set_contract_version;
 
 use crate::error::{contract_err, ContractError};
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, Validate};
+use crate::msg::{ExecuteMsg, QueryMsg, Validate};
 use crate::state::{config, config_read, get_transfer_storage, State, Transfer};
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
@@ -217,7 +217,7 @@ mod tests {
     const RESTRICTED_DENOM: &str = "restricted_1";
 
     #[test]
-    fn create_ask_with_restricted_marker() {
+    fn create_transfer_success() {
         let mut deps = mock_dependencies(&[]);
         setup_test_base(
             &mut deps.storage,
@@ -247,7 +247,7 @@ mod tests {
 
         let recipient = "transfer_to";
 
-        // execute create ask
+        // execute create transfer
         let transfer_response = execute(
             deps.as_mut(),
             mock_env(),
@@ -255,7 +255,7 @@ mod tests {
             transfer_msg.clone(),
         );
 
-        // verify create ask response
+        // verify transfer response
         match transfer_response {
             Ok(response) => {
                 assert_eq!(response.attributes.len(), 6);
@@ -305,10 +305,270 @@ mod tests {
         }
     }
 
+    #[test]
+    fn create_transfer_with_funds_throws_error() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let test_marker: Marker = setup_restricted_marker();
+        deps.querier.with_markers(vec![test_marker]);
+
+        let amount = Uint128::new(1);
+        let transfer_msg = ExecuteMsg::Transfer {
+            id: "56253028-12f5-4d2a-a691-ebdfd2a7b865".into(),
+            denom: RESTRICTED_DENOM.into(),
+            amount: amount.into(),
+            recipient: "transfer_to".into()
+        };
+
+        let sender_info = mock_info(
+            "sender",
+            &[coin(amount.u128(), RESTRICTED_DENOM)]
+        );
+
+        let sender_balance = coin(1, RESTRICTED_DENOM);
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
+
+        // execute create transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            transfer_msg.clone(),
+        );
+
+        // verify transfer response
+        match transfer_response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::SentFundsUnsupported => {}
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
+    #[test]
+    fn create_transfer_insufficient_funds_throws_error() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let test_marker: Marker = setup_restricted_marker();
+        deps.querier.with_markers(vec![test_marker]);
+
+        let amount = Uint128::new(2);
+        let transfer_msg = ExecuteMsg::Transfer {
+            id: "56253028-12f5-4d2a-a691-ebdfd2a7b865".into(),
+            denom: RESTRICTED_DENOM.into(),
+            amount: amount.into(),
+            recipient: "transfer_to".into()
+        };
+
+        let sender_info = mock_info("sender", &[]);
+
+        let sender_balance = coin(1, RESTRICTED_DENOM);
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
+
+        // execute create transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            transfer_msg.clone(),
+        );
+
+        // verify transfer response
+        match transfer_response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::InsufficientFunds => {}
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
+    #[test]
+    fn create_transfer_invalid_data() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let test_marker: Marker = setup_restricted_marker();
+        deps.querier.with_markers(vec![test_marker]);
+
+        let amount = Uint128::new(1);
+        let transfer_msg = ExecuteMsg::Transfer {
+            id: "".into(),
+            denom: RESTRICTED_DENOM.into(),
+            amount: amount.into(),
+            recipient: "transfer_to".into()
+        };
+
+        let sender_info = mock_info("sender", &[]);
+
+        let sender_balance = coin(1, RESTRICTED_DENOM);
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
+
+        // execute create transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            transfer_msg.clone(),
+        );
+
+        // verify transfer response
+        match transfer_response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::InvalidFields { fields } => {
+                    assert!(fields.contains(&"id".into()));
+                }
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
+    #[test]
+    fn create_transfer_existing_id() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let test_marker: Marker = setup_restricted_marker();
+        deps.querier.with_markers(vec![test_marker]);
+
+        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
+        let amount = Uint128::new(1);
+        let sender_info = mock_info("sender", &[]);
+
+        store_test_transfer(&mut deps.storage, &Transfer {
+            id: transfer_id.into(),
+            sender: sender_info.sender.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: Addr::unchecked("transfer_to"),
+        });
+
+        let transfer_msg = ExecuteMsg::Transfer {
+            id: transfer_id.into(),
+            denom: RESTRICTED_DENOM.into(),
+            amount: amount.into(),
+            recipient: "transfer_to".into()
+        };
+
+        let sender_balance = coin(1, RESTRICTED_DENOM);
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
+
+        // execute create transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            transfer_msg.clone(),
+        );
+
+        // verify transfer response
+        match transfer_response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::InvalidFields { fields } => {
+                    assert!(fields.contains(&"id".into()));
+                }
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
+    #[test]
+    fn create_transfer_unrestricted_marker_throws_error() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let amount = Uint128::new(1);
+        let transfer_msg = ExecuteMsg::Transfer {
+            id: "56253028-12f5-4d2a-a691-ebdfd2a7b865".into(),
+            denom: "unrestricted-marker".into(),
+            amount: amount.into(),
+            recipient: "transfer_to".into()
+        };
+
+        let sender_info = mock_info("sender", &[]);
+
+        let sender_balance = coin(amount.u128(), "unrestricted-marker");
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
+
+        // execute create transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            transfer_msg.clone(),
+        );
+
+        // verify transfer response
+        match transfer_response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) =>  match error {
+                ContractError::UnsupportedMarkerType => {}
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
     fn setup_test_base(storage: &mut dyn Storage, contract_info: &State) {
         if let Err(error) = config(storage).save(&contract_info) {
             panic!("unexpected error: {:?}", error)
         }
+    }
+
+    fn store_test_transfer(storage: &mut dyn Storage, transfer: &Transfer) {
+        let mut transfer_storage = get_transfer_storage(storage);
+        if let Err(error) = transfer_storage.save(transfer.id.as_bytes(), transfer) {
+            panic!("unexpected error: {:?}", error)
+        };
     }
 
     fn setup_restricted_marker() -> Marker {

@@ -1,4 +1,3 @@
-use std::fmt;
 use crate::error::{contract_err, ContractError};
 use cosmwasm_std::{Uint128};
 use schemars::JsonSchema;
