@@ -25,7 +25,6 @@ pub fn instantiate(
     let contract_info = State {
         name: msg.name,
     };
-    // todo reconcile 2 save approaches
     config(deps.storage).save(&contract_info)?;
 
     set_contract_version(deps.storage, CRATE_NAME, PACKAGE_VERSION)?;
