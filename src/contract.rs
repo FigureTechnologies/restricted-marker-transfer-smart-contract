@@ -1,148 +1,347 @@
-#[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
+use std::fmt;
+use cosmwasm_std::{entry_point};
+use cosmwasm_std::{
+    attr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128
+};
+use provwasm_std::{
+    Marker, MarkerType, ProvenanceMsg, ProvenanceQuerier,
+    ProvenanceQuery, transfer_marker_coins,
+};
+
 use cw2::set_contract_version;
 
-use crate::error::ContractError;
-use crate::msg::{CountResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
-use crate::state::{State, STATE};
+use crate::error::{contract_err, ContractError};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, Validate};
+use crate::state::{config, config_read, get_transfer_storage, State, Transfer};
 
-// version info for migration info
-const CONTRACT_NAME: &str = "crates.io:restricted-marker-transfer";
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
+pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn instantiate(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    msg: InstantiateMsg,
-) -> Result<Response, ContractError> {
-    let state = State {
-        count: msg.count,
-        owner: info.sender.clone(),
-    };
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-    STATE.save(deps.storage, &state)?;
-
-    Ok(Response::new()
-        .add_attribute("method", "instantiate")
-        .add_attribute("owner", info.sender)
-        .add_attribute("count", msg.count.to_string()))
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
+// smart contract execute entrypoint
+#[entry_point]
 pub fn execute(
-    deps: DepsMut,
-    _env: Env,
+    deps: DepsMut<ProvenanceQuery>,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response, ContractError> {
+) -> Result<Response<ProvenanceMsg>, ContractError> {
+    msg.validate()?;
+
     match msg {
-        ExecuteMsg::Increment {} => try_increment(deps),
-        ExecuteMsg::Reset { count } => try_reset(deps, info, count),
-    }
-}
-
-pub fn try_increment(deps: DepsMut) -> Result<Response, ContractError> {
-    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-        state.count += 1;
-        Ok(state)
-    })?;
-
-    Ok(Response::new().add_attribute("method", "try_increment"))
-}
-
-pub fn try_reset(deps: DepsMut, info: MessageInfo, count: i32) -> Result<Response, ContractError> {
-    STATE.update(deps.storage, |mut state| -> Result<_, ContractError> {
-        if info.sender != state.owner {
-            return Err(ContractError::Unauthorized {});
+        ExecuteMsg::ApproveTransfer { id } => {
+            approve_transfer(deps, env, info, id)
         }
-        state.count = count;
-        Ok(state)
-    })?;
-    Ok(Response::new().add_attribute("method", "reset"))
-}
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-    match msg {
-        QueryMsg::GetCount {} => to_binary(&query_count(deps)?),
+        ExecuteMsg::CancelTransfer { id } => {
+            cancel_transfer(deps, env, info, id)
+        }
+        ExecuteMsg::RejectTransfer { id } => {
+            reject_transfer(deps, env, info, id)
+        }
+        ExecuteMsg::Transfer { id, denom, amount, recipient } => {
+            create_transfer(
+                deps,
+                env,
+                info,
+                id,
+                denom,
+                amount,
+                recipient,
+            )
+        }
     }
 }
 
-fn query_count(deps: Deps) -> StdResult<CountResponse> {
-    let state = STATE.load(deps.storage)?;
-    Ok(CountResponse { count: state.count })
+fn create_transfer(
+    deps: DepsMut<ProvenanceQuery>,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+    denom: String,
+    amount: Uint128,
+    recipient: String
+) -> Result<Response<ProvenanceMsg>, ContractError> {
+
+    let transfer = Transfer {
+        id,
+        sender: info.sender.to_owned(),
+        denom,
+        amount,
+        recipient: deps.api.addr_validate(&recipient)?,
+    };
+
+    let is_restricted_marker = matches!(
+        ProvenanceQuerier::new(&deps.querier).get_marker_by_denom(transfer.denom.clone()),
+        Ok(Marker {
+            marker_type: MarkerType::Restricted,
+            ..
+        })
+    );
+
+    match is_restricted_marker {
+        // funds should not be sent
+        true => {
+            if !info.funds.is_empty() {
+                return Err(ContractError::SentFundsUnsupported);
+            }
+        }
+        false => {
+            return Err(ContractError::UnsupportedMarkerType);
+        }
+    }
+
+    // Ensure the sender holds enough denom to cover the transfer.
+    let balance = deps
+        .querier
+        .query_balance(info.sender.clone(), transfer.denom.clone())?;
+
+    if balance.amount < transfer.amount {
+        return Err(ContractError::InsufficientFunds);
+    }
+
+    let mut transfer_storage = get_transfer_storage(deps.storage);
+
+    if transfer_storage.may_load(transfer.id.as_bytes())?.is_some() {
+        return Err(ContractError::InvalidFields {
+            fields: vec![String::from("id")],
+        });
+    }
+
+    transfer_storage.save(transfer.id.as_bytes(), &transfer)?;
+
+    let mut response = Response::new().add_attributes(vec![
+        attr("action", Action::Transfer.to_string()),
+        attr("id", &transfer.id),
+        attr("denom", &transfer.denom),
+        attr("amount", &transfer.amount.to_string()),
+        attr("sender", &transfer.sender),
+        attr("recipient", &transfer.recipient),
+    ]);
+
+    response = response.add_message(
+        transfer_marker_coins(
+            transfer.amount.into(),
+            transfer.denom.to_owned(),
+            env.contract.address,
+            transfer.sender,
+        )?
+    );
+
+    Ok(response)
+}
+
+pub fn cancel_transfer(
+    deps: DepsMut<ProvenanceQuery>,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response<ProvenanceMsg>, ContractError> {
+    // implement
+    return Err(ContractError::UnsupportedMarkerType);
+}
+
+pub fn reject_transfer(
+    deps: DepsMut<ProvenanceQuery>,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response<ProvenanceMsg>, ContractError> {
+    // implement
+    return Err(ContractError::UnsupportedMarkerType);
+}
+
+pub fn approve_transfer(
+    deps: DepsMut<ProvenanceQuery>,
+    env: Env,
+    info: MessageInfo,
+    id: String,
+) -> Result<Response<ProvenanceMsg>, ContractError> {
+    // implement
+    return Err(ContractError::UnsupportedMarkerType);
+}
+
+
+// smart contract query entrypoint
+// #[entry_point]
+// pub fn query(deps: Deps<ProvenanceQuery>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+//     msg.validate()?;
+//
+//     // TODO: implement
+//
+//
+//     match msg {
+//
+//     //     QueryMsg::GetAsk { id } => {
+//     //         let ask_storage_read = get_ask_storage_read(deps.storage);
+//     //         return to_binary(&ask_storage_read.load(id.as_bytes())?);
+//     //     }
+//     //     QueryMsg::GetBid { id } => {
+//     //         let bid_storage_read = get_bid_storage_read(deps.storage);
+//     //         return to_binary(&bid_storage_read.load(id.as_bytes())?);
+//     //     }
+//     //     QueryMsg::GetContractInfo {} => to_binary(&get_contract_info(deps.storage)?),
+//     //     QueryMsg::GetVersionInfo {} => to_binary(&get_version_info(deps.storage)?),
+//
+//         QueryMsg::GetContractInfo { } => to_binary(&config_read(deps.storage).load()),
+//         QueryMsg::GetVersionInfo { } => to_binary(&config_read(deps.storage).load()),
+//         QueryMsg::GetTransfer { .. } => to_binary(&config_read(deps.storage).load()),
+//         QueryMsg::GetAllTransfers { .. } => to_binary(&config_read(deps.storage).load()),
+//     }
+// }
+
+enum Action {
+    Transfer,
+    Approve,
+    Reject,
+    Cancel
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Action::Transfer => write!(f, "create_transfer"),
+            Action::Approve => write!(f, "approve"),
+            Action::Reject => write!(f, "reject"),
+            Action::Cancel => write!(f, "cancel"),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmwasm_std::testing::{mock_dependencies_with_balance, mock_env, mock_info};
-    use cosmwasm_std::{coins, from_binary};
+    use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
+    use cosmwasm_std::{from_binary, Addr, Storage, coin};
+    use provwasm_mocks::mock_dependencies;
+    use crate::state::get_transfer_storage_read;
+
+    const RESTRICTED_DENOM: &str = "restricted_1";
 
     #[test]
-    fn proper_initialization() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
+    fn create_ask_with_restricted_marker() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
 
-        let msg = InstantiateMsg { count: 17 };
-        let info = mock_info("creator", &coins(1000, "earth"));
+        let test_marker: Marker = setup_restricted_marker();
+        deps.querier.with_markers(vec![test_marker]);
 
-        // we can just call .unwrap() to assert this was a success
-        let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-        assert_eq!(0, res.messages.len());
+        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
+        let amount = Uint128::new(1);
+        let transfer_msg = ExecuteMsg::Transfer {
+            id: transfer_id.into(),
+            denom: RESTRICTED_DENOM.into(),
+            amount: amount.into(),
+            recipient: "transfer_to".into()
+        };
 
-        // it worked, let's query the state
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(17, value.count);
-    }
+        let sender_info = mock_info("sender", &[]);
 
-    #[test]
-    fn increment() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
+        let sender_balance = coin(1, RESTRICTED_DENOM);
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
-        let msg = InstantiateMsg { count: 17 };
-        let info = mock_info("creator", &coins(2, "token"));
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+        let recipient = "transfer_to";
 
-        // beneficiary can release it
-        let info = mock_info("anyone", &coins(2, "token"));
-        let msg = ExecuteMsg::Increment {};
-        let _res = execute(deps.as_mut(), mock_env(), info, msg).unwrap();
+        // execute create ask
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            transfer_msg.clone(),
+        );
 
-        // should increase counter by 1
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(18, value.count);
-    }
+        // verify create ask response
+        match transfer_response {
+            Ok(response) => {
+                assert_eq!(response.attributes.len(), 6);
+                assert_eq!(response.attributes[0], attr("action", Action::Transfer.to_string()));
+                assert_eq!(response.attributes[1], attr("id", transfer_id));
+                assert_eq!(response.attributes[2], attr("denom", RESTRICTED_DENOM));
+                assert_eq!(response.attributes[3], attr("amount", amount.to_string()));
+                assert_eq!(response.attributes[4], attr("sender", sender_info.clone().sender));
+                assert_eq!(response.attributes[5], attr("recipient", recipient));
 
-    #[test]
-    fn reset() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
-
-        let msg = InstantiateMsg { count: 17 };
-        let info = mock_info("creator", &coins(2, "token"));
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-
-        // beneficiary can release it
-        let unauth_info = mock_info("anyone", &coins(2, "token"));
-        let msg = ExecuteMsg::Reset { count: 5 };
-        let res = execute(deps.as_mut(), mock_env(), unauth_info, msg);
-        match res {
-            Err(ContractError::Unauthorized {}) => {}
-            _ => panic!("Must return unauthorized error"),
+                assert_eq!(response.messages.len(), 1);
+                assert_eq!(
+                    response.messages[0].msg,
+                    transfer_marker_coins(
+                        amount.u128(),
+                        RESTRICTED_DENOM.to_owned(),
+                        Addr::unchecked(MOCK_CONTRACT_ADDR),
+                        sender_info.clone().sender
+                    )
+                        .unwrap()
+                );
+            }
+            Err(error) => {
+                panic!("failed to create transfer: {:?}", error)
+            }
         }
 
-        // only the original creator can reset the counter
-        let auth_info = mock_info("creator", &coins(2, "token"));
-        let msg = ExecuteMsg::Reset { count: 5 };
-        let _res = execute(deps.as_mut(), mock_env(), auth_info, msg).unwrap();
+        // verify transfer stored
+        let transfer_storage = get_transfer_storage_read(&deps.storage);
 
-        // should now be 5
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(5, value.count);
+        match transfer_storage.load(transfer_id.as_bytes()) {
+            Ok(stored_transfer) => {
+                assert_eq!(
+                    stored_transfer,
+                    Transfer {
+                        id: transfer_id.into(),
+                        sender: sender_info.sender.to_owned(),
+                        denom: RESTRICTED_DENOM.into(),
+                        amount,
+                        recipient: Addr::unchecked(recipient)
+                    }
+                )
+            }
+            _ => {
+                panic!("transfer was not found in storage")
+            }
+        }
+    }
+
+    fn setup_test_base(storage: &mut dyn Storage, contract_info: &State) {
+        if let Err(error) = config(storage).save(&contract_info) {
+            panic!("unexpected error: {:?}", error)
+        }
+    }
+
+    fn setup_restricted_marker() -> Marker {
+        let marker_json = b"{
+              \"address\": \"tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ\",
+              \"coins\": [
+                {
+                  \"denom\": \"restricted_1\",
+                  \"amount\": \"1000\"
+                }
+              ],
+              \"account_number\": 10,
+              \"sequence\": 0,
+              \"permissions\": [
+                {
+                  \"permissions\": [
+                    \"burn\",
+                    \"delete\",
+                    \"deposit\",
+                    \"admin\",
+                    \"mint\",
+                    \"withdraw\"
+                  ],
+                  \"address\": \"tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu\"
+                }
+              ],
+              \"status\": \"active\",
+              \"denom\": \"restricted_1\",
+              \"total_supply\": \"1000\",
+              \"marker_type\": \"restricted\",
+              \"supply_fixed\": false
+            }";
+
+        return from_binary(&Binary::from(marker_json)).unwrap();
     }
 }
