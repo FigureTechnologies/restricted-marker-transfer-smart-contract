@@ -10,14 +10,17 @@ pub enum ContractError {
     #[error("Invalid fields: {fields:?}")]
     InvalidFields { fields: Vec<String> },
 
+    #[error("Failed to load transfer: {error:?}")]
+    LoadTransferFailed { error: StdError },
+
     #[error("{0}")]
     Std(#[from] StdError),
 
     #[error("bank sends are not allowed in restricted marker transfers")]
     SentFundsUnsupported,
 
-    #[error("Unauthorized")]
-    Unauthorized {},
+    #[error("Unauthorized: {error:?}")]
+    Unauthorized { error: String },
 
     #[error("Unsupported upgrade: {source_version:?} => {target_version:?}")]
     UnsupportedUpgrade {
