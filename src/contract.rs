@@ -3,13 +3,11 @@ use cosmwasm_std::{Addr, entry_point};
 use cosmwasm_std::{
     attr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128
 };
-use provwasm_std::{AccessGrant, Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier, ProvenanceQuery, transfer_marker_coins};
-
-use cw2::set_contract_version;
+use provwasm_std::{Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier, ProvenanceQuery, transfer_marker_coins};
 
 use crate::error::{contract_err, ContractError};
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
-use crate::state::{config, config_read, get_transfer_storage, get_transfer_storage_read, State, Transfer};
+use crate::state::{config, get_transfer_storage, get_transfer_storage_read, State, Transfer};
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -130,10 +128,44 @@ pub fn cancel_transfer(
     deps: DepsMut<ProvenanceQuery>,
     env: Env,
     info: MessageInfo,
-    id: String,
+    transfer_id: String,
 ) -> Result<Response<ProvenanceMsg>, ContractError> {
-    // implement
-    return Err(ContractError::UnsupportedMarkerType);
+    let transfer_storage_read = get_transfer_storage_read(deps.storage);
+    let mut transfer = transfer_storage_read
+        .load(transfer_id.as_bytes())
+        .map_err(|error| ContractError::LoadTransferFailed { error })?;
+
+    if !info.funds.is_empty() {
+        return Err(ContractError::SentFundsUnsupported);
+    }
+
+    if !info.sender.eq(&transfer.sender) {
+        return Err(ContractError::Unauthorized {
+            error: String::from("Only original sender can cancel")
+        });
+    }
+
+    let mut response = Response::new().add_attributes(vec![
+        attr("action", Action::Cancel.to_string()),
+        attr("id", &transfer.id),
+        attr("denom", &transfer.denom),
+        attr("amount", &transfer.amount.to_string()),
+        attr("sender", &transfer.sender),
+    ]);
+
+    response = response.add_message(
+        transfer_marker_coins(
+            transfer.amount.into(),
+            transfer.denom.to_owned(),
+            transfer.sender,
+            env.contract.address,
+        )?
+    );
+
+    // finally remove the transfer from storage
+    get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
+
+    Ok(response)
 }
 
 pub fn reject_transfer(
@@ -189,7 +221,7 @@ pub fn approve_transfer(
         )?
     );
 
-    // finally update or remove the transfer from storage
+    // finally remove the transfer from storage
     get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
     Ok(response)
 }
@@ -397,15 +429,7 @@ mod tests {
         );
 
         // verify transfer response
-        match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
-            Err(error) => match error {
-                ContractError::SentFundsUnsupported => {}
-                error => panic!("unexpected error: {:?}", error),
-            },
-        }
+        assert_sent_funds_unsupported_error(transfer_response);
     }
 
     #[test]
@@ -727,15 +751,7 @@ mod tests {
         );
 
         // verify approve transfer response
-        match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
-            Err(error) => match error {
-                ContractError::SentFundsUnsupported => {}
-                error => panic!("unexpected error: {:?}", error),
-            },
-        }
+        assert_sent_funds_unsupported_error(transfer_response);
 
         let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(stored_transfer, transfer_storage.load(transfer_id.as_bytes()).unwrap());
@@ -882,6 +898,184 @@ mod tests {
         let test_marker: Marker = from_binary(&Binary::from(marker_json)).unwrap();
 
         assert_eq!(false, is_marker_admin(non_admin_address.to_owned(), test_marker.into()))
+    }
+
+    #[test]
+    fn cancel_transfer_success() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_adddress");
+        let recipient_address = Addr::unchecked("transfer_to");
+
+        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
+        let amount = Uint128::new(3);
+        let sender_info = mock_info(sender_address.as_str(), &[]);
+
+        store_test_transfer(&mut deps.storage, &Transfer {
+            id: transfer_id.into(),
+            sender: sender_address.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: recipient_address.to_owned(),
+        });
+
+        let cancel_transfer_msg = ExecuteMsg::CancelTransfer {
+            id: transfer_id.into(),
+        };
+
+        // execute cancel transfer
+        let cancel_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            cancel_transfer_msg.clone(),
+        );
+
+        // verify approve transfer response
+        match cancel_response {
+            Ok(response) => {
+                assert_eq!(response.attributes.len(), 5);
+                assert_eq!(response.attributes[0], attr("action", Action::Cancel.to_string()));
+                assert_eq!(response.attributes[1], attr("id", transfer_id));
+                assert_eq!(response.attributes[2], attr("denom", RESTRICTED_DENOM));
+                assert_eq!(response.attributes[3], attr("amount", amount.to_string()));
+                assert_eq!(response.attributes[4], attr("sender", sender_address.to_owned()));
+
+                assert_eq!(response.messages.len(), 1);
+                assert_eq!(
+                    response.messages[0].msg,
+                    transfer_marker_coins(
+                        amount.u128(),
+                        RESTRICTED_DENOM.to_owned(),
+                        sender_address.to_owned(),
+                        Addr::unchecked(MOCK_CONTRACT_ADDR)
+                    )
+                        .unwrap()
+                );
+            }
+            Err(error) => {
+                panic!("failed to cancel transfer: {:?}", error)
+            }
+        }
+
+        let transfer_storage = get_transfer_storage_read(&deps.storage);
+        assert_eq!(None, transfer_storage.may_load(transfer_id.as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn cancel_transfer_sent_funds_returns_error() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_address");
+        let recipient_address = Addr::unchecked("transfer_to");
+
+        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
+        let amount = Uint128::new(3);
+        let sender_info = mock_info(sender_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
+
+        let stored_transfer = Transfer {
+            id: transfer_id.into(),
+            sender: sender_address.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: recipient_address.to_owned(),
+        };
+        store_test_transfer(&mut deps.storage, &stored_transfer);
+
+        let cancel_transfer_msg = ExecuteMsg::CancelTransfer {
+            id: transfer_id.into(),
+        };
+
+        // execute cancel transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            cancel_transfer_msg.clone(),
+        );
+
+        // verify cancel transfer response
+        assert_sent_funds_unsupported_error(transfer_response);
+
+        let transfer_storage = get_transfer_storage_read(&deps.storage);
+        assert_eq!(stored_transfer, transfer_storage.load(transfer_id.as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn cancel_transfer_unauthorized() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_address");
+        let recipient_address = Addr::unchecked("transfer_to");
+
+        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
+        let amount = Uint128::new(3);
+        let sender_info = mock_info(&"other_address".to_string(), &[]);
+
+        let stored_transfer = Transfer {
+            id: transfer_id.into(),
+            sender: sender_address.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: recipient_address.to_owned(),
+        };
+        store_test_transfer(&mut deps.storage, &stored_transfer);
+
+        let cancel_transfer_msg = ExecuteMsg::CancelTransfer {
+            id: transfer_id.into(),
+        };
+
+        // execute cancel transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            cancel_transfer_msg.clone(),
+        );
+
+        // verify cancel transfer response
+        match transfer_response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::Unauthorized { .. } => {}
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+
+        let transfer_storage = get_transfer_storage_read(&deps.storage);
+        assert_eq!(stored_transfer, transfer_storage.load(transfer_id.as_bytes()).unwrap());
+    }
+
+    fn assert_sent_funds_unsupported_error(response: Result<Response<ProvenanceMsg>, ContractError>) {
+        match response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::SentFundsUnsupported => {}
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
     }
 
     fn setup_test_base(storage: &mut dyn Storage, contract_info: &State) {
