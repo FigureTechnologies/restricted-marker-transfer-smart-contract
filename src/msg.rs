@@ -75,32 +75,41 @@ impl Validate for ExecuteMsg {
         let mut invalid_fields: Vec<&str> = vec![];
 
         match self {
-            // TODO: implement
             ExecuteMsg::ApproveTransfer { id } => {
                 if Uuid::parse_str(id).is_err() {
                     invalid_fields.push("id");
                 }
             }
-            ExecuteMsg::CancelTransfer { .. } => {}
-            ExecuteMsg::RejectTransfer { .. } => {}
+            ExecuteMsg::CancelTransfer { id } => {
+                if Uuid::parse_str(id).is_err() {
+                    invalid_fields.push("id");
+                }
+            }
+            ExecuteMsg::RejectTransfer { id } => {
+                if Uuid::parse_str(id).is_err() {
+                    invalid_fields.push("id");
+                }
+            }
             ExecuteMsg::Transfer {
                 id,
                 denom,
                 amount,
                 recipient
             } => {
-
                 if Uuid::parse_str(id).is_err() {
                     invalid_fields.push("id");
                 }
 
-                // Ensure amount is non-zero.
-                if amount.is_zero() {
-                    return Err(contract_err("invalid transfer amount"));
+                if amount.lt(&Uint128::new(1)) {
+                    invalid_fields.push("amount");
                 }
-
-
-            } // validate id, to address is an address
+                if denom.is_empty() {
+                    invalid_fields.push("denom");
+                }
+                if recipient.is_empty() {
+                    invalid_fields.push("recipient");
+                }
+            }
         }
 
         match invalid_fields.len() {
@@ -172,4 +181,101 @@ impl Validate for QueryMsg {
 
 pub trait Validate {
     fn validate(&self) -> Result<(), ContractError>;
+}
+
+
+#[cfg(test)]
+mod tests {
+    use crate::msg::ExecuteMsg::{ApproveTransfer, CancelTransfer, RejectTransfer, Transfer};
+    use super::*;
+
+    #[test]
+    fn validate_transfer() {
+        let invalid_transfer_msg = Transfer {
+            id: "fake-id".to_string(),
+            denom: "".to_string(),
+            amount: Uint128::new(0),
+            recipient: "".to_string()
+        };
+
+        let validate_response = invalid_transfer_msg.validate();
+
+        match validate_response {
+            Ok(validate_response) =>
+                panic!("expected error but was ok"),
+            Err(error) => match error {
+                ContractError::InvalidFields { fields } => {
+                    assert_eq!(4, fields.len());
+                    assert!(fields.contains(&"id".into()));
+                    assert!(fields.contains(&"denom".into()));
+                    assert!(fields.contains(&"amount".into()));
+                    assert!(fields.contains(&"recipient".into()));
+                }
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
+    #[test]
+    fn validate_approve_transfer() {
+        let invalid_approve_msg = ApproveTransfer {
+            id: "not-a-real-uuid".to_string(),
+        };
+
+        let validate_response = invalid_approve_msg.validate();
+
+        match validate_response {
+            Ok(validate_response) =>
+                panic!("expected error but was ok"),
+            Err(error) => match error {
+                ContractError::InvalidFields { fields } => {
+                    assert_eq!(1, fields.len());
+                    assert!(fields.contains(&"id".into()));
+                }
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
+    #[test]
+    fn validate_cancel_transfer() {
+        let invalid_cancel_msg = CancelTransfer {
+            id: "not-a-real-uuid".to_string(),
+        };
+
+        let validate_response = invalid_cancel_msg.validate();
+
+        match validate_response {
+            Ok(validate_response) =>
+                panic!("expected error but was ok"),
+            Err(error) => match error {
+                ContractError::InvalidFields { fields } => {
+                    assert_eq!(1, fields.len());
+                    assert!(fields.contains(&"id".into()));
+                }
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
+
+    #[test]
+    fn validate_reject_transfer() {
+        let invalid_reject_msg = RejectTransfer {
+            id: "not-a-real-uuid".to_string(),
+        };
+
+        let validate_response = invalid_reject_msg.validate();
+
+        match validate_response {
+            Ok(validate_response) =>
+                panic!("expected error but was ok"),
+            Err(error) => match error {
+                ContractError::InvalidFields { fields } => {
+                    assert_eq!(1, fields.len());
+                    assert!(fields.contains(&"id".into()));
+                }
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+    }
 }
