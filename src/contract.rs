@@ -23,26 +23,15 @@ pub fn execute(
     msg.validate()?;
 
     match msg {
-        ExecuteMsg::ApproveTransfer { id } => {
-            approve_transfer(deps, env, info, id)
-        }
-        ExecuteMsg::CancelTransfer { id } => {
-            cancel_transfer(deps, env, info, id)
-        }
-        ExecuteMsg::RejectTransfer { id } => {
-            reject_transfer(deps, env, info, id)
-        }
-        ExecuteMsg::Transfer { id, denom, amount, recipient } => {
-            create_transfer(
-                deps,
-                env,
-                info,
-                id,
-                denom,
-                amount,
-                recipient,
-            )
-        }
+        ExecuteMsg::ApproveTransfer { id } => approve_transfer(deps, env, info, id),
+        ExecuteMsg::CancelTransfer { id } => cancel_transfer(deps, env, info, id),
+        ExecuteMsg::RejectTransfer { id } => reject_transfer(deps, env, info, id),
+        ExecuteMsg::Transfer {
+            id,
+            denom,
+            amount,
+            recipient,
+        } => create_transfer(deps, env, info, id, denom, amount, recipient),
     }
 }
 
@@ -53,7 +42,7 @@ fn create_transfer(
     id: String,
     denom: String,
     amount: Uint128,
-    recipient: String
+    recipient: String,
 ) -> Result<Response<ProvenanceMsg>, ContractError> {
 
     let transfer = Transfer {
@@ -131,7 +120,7 @@ pub fn cancel_transfer(
     transfer_id: String,
 ) -> Result<Response<ProvenanceMsg>, ContractError> {
     let transfer_storage_read = get_transfer_storage_read(deps.storage);
-    let mut transfer = transfer_storage_read
+    let transfer = transfer_storage_read
         .load(transfer_id.as_bytes())
         .map_err(|error| ContractError::LoadTransferFailed { error })?;
 
@@ -172,10 +161,49 @@ pub fn reject_transfer(
     deps: DepsMut<ProvenanceQuery>,
     env: Env,
     info: MessageInfo,
-    id: String,
+    transfer_id: String,
 ) -> Result<Response<ProvenanceMsg>, ContractError> {
-    // implement
-    return Err(ContractError::UnsupportedMarkerType);
+    let transfer_storage_read = get_transfer_storage_read(deps.storage);
+    let transfer = transfer_storage_read
+        .load(transfer_id.as_bytes())
+        .map_err(|error| ContractError::LoadTransferFailed { error })?;
+
+    if !info.funds.is_empty() {
+        return Err(ContractError::SentFundsUnsupported);
+    }
+
+    let marker = ProvenanceQuerier::new(&deps.querier)
+        .get_marker_by_denom(transfer.denom.clone())?;
+
+    if !is_marker_admin(info.sender.to_owned(), marker.to_owned()) {
+        return Err(ContractError::Unauthorized {
+            error: String::from("MARKER_ADMIN permission is required to reject transfers")
+        });
+    }
+
+
+    let mut response = Response::new().add_attributes(vec![
+        attr("action", Action::Reject.to_string()),
+        attr("id", &transfer.id),
+        attr("denom", &transfer.denom),
+        attr("amount", &transfer.amount.to_string()),
+        attr("sender", &transfer.sender),
+        attr("admin", info.sender.to_owned()),
+    ]);
+
+    response = response.add_message(
+        transfer_marker_coins(
+            transfer.amount.into(),
+            transfer.denom.to_owned(),
+            transfer.sender,
+            env.contract.address,
+        )?
+    );
+
+    // finally remove the transfer from storage
+    get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
+
+    Ok(response)
 }
 
 pub fn approve_transfer(
@@ -185,7 +213,7 @@ pub fn approve_transfer(
     transfer_id: String,
 ) -> Result<Response<ProvenanceMsg>, ContractError> {
     let transfer_storage_read = get_transfer_storage_read(deps.storage);
-    let mut transfer = transfer_storage_read
+    let transfer = transfer_storage_read
         .load(transfer_id.as_bytes())
         .map_err(|error| ContractError::LoadTransferFailed { error })?;
 
@@ -209,7 +237,7 @@ pub fn approve_transfer(
         attr("amount", &transfer.amount.to_string()),
         attr("sender", &transfer.sender),
         attr("recipient", &transfer.recipient),
-        attr("approver", &info.sender),
+        attr("admin", &info.sender),
     ]);
 
     response = response.add_message(
@@ -276,7 +304,7 @@ enum Action {
     Transfer,
     Approve,
     Reject,
-    Cancel
+    Cancel,
 }
 
 impl fmt::Display for Action {
@@ -299,6 +327,7 @@ mod tests {
     use crate::state::get_transfer_storage_read;
 
     const RESTRICTED_DENOM: &str = "restricted_1";
+    const TRANSFER_ID: &str = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
 
     #[test]
     fn create_transfer_success() {
@@ -313,10 +342,9 @@ mod tests {
         let test_marker: Marker = setup_restricted_marker();
         deps.querier.with_markers(vec![test_marker]);
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             denom: RESTRICTED_DENOM.into(),
             amount: amount.into(),
             recipient: "transfer_to".into()
@@ -344,7 +372,7 @@ mod tests {
             Ok(response) => {
                 assert_eq!(response.attributes.len(), 6);
                 assert_eq!(response.attributes[0], attr("action", Action::Transfer.to_string()));
-                assert_eq!(response.attributes[1], attr("id", transfer_id));
+                assert_eq!(response.attributes[1], attr("id", TRANSFER_ID));
                 assert_eq!(response.attributes[2], attr("denom", RESTRICTED_DENOM));
                 assert_eq!(response.attributes[3], attr("amount", amount.to_string()));
                 assert_eq!(response.attributes[4], attr("sender", sender_info.clone().sender));
@@ -370,12 +398,12 @@ mod tests {
         // verify transfer stored
         let transfer_storage = get_transfer_storage_read(&deps.storage);
 
-        match transfer_storage.load(transfer_id.as_bytes()) {
+        match transfer_storage.load(TRANSFER_ID.as_bytes()) {
             Ok(stored_transfer) => {
                 assert_eq!(
                     stored_transfer,
                     Transfer {
-                        id: transfer_id.into(),
+                        id: TRANSFER_ID.into(),
                         sender: sender_info.sender.to_owned(),
                         denom: RESTRICTED_DENOM.into(),
                         amount,
@@ -428,7 +456,6 @@ mod tests {
             transfer_msg.clone(),
         );
 
-        // verify transfer response
         assert_sent_funds_unsupported_error(transfer_response);
     }
 
@@ -447,7 +474,7 @@ mod tests {
 
         let amount = Uint128::new(2);
         let transfer_msg = ExecuteMsg::Transfer {
-            id: "56253028-12f5-4d2a-a691-ebdfd2a7b865".into(),
+            id: TRANSFER_ID.into(),
             denom: RESTRICTED_DENOM.into(),
             amount: amount.into(),
             recipient: "transfer_to".into()
@@ -470,7 +497,7 @@ mod tests {
 
         // verify transfer response
         match transfer_response {
-            Ok(response) => {
+            Ok(..) => {
                 panic!("expected error, but ok")
             }
             Err(error) => match error {
@@ -543,12 +570,11 @@ mod tests {
         let test_marker: Marker = setup_restricted_marker();
         deps.querier.with_markers(vec![test_marker]);
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(1);
         let sender_info = mock_info("sender", &[]);
 
         store_test_transfer(&mut deps.storage, &Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             sender: sender_info.sender.to_owned(),
             denom: RESTRICTED_DENOM.into(),
             amount,
@@ -556,7 +582,7 @@ mod tests {
         });
 
         let transfer_msg = ExecuteMsg::Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             denom: RESTRICTED_DENOM.into(),
             amount: amount.into(),
             recipient: "transfer_to".into()
@@ -601,7 +627,7 @@ mod tests {
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
-            id: "56253028-12f5-4d2a-a691-ebdfd2a7b865".into(),
+            id: TRANSFER_ID.into(),
             denom: "unrestricted-marker".into(),
             amount: amount.into(),
             recipient: "transfer_to".into()
@@ -644,19 +670,18 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_adddress");
-        let sender_address =  Addr::unchecked("sender_adddress");
+        let admin_address = Addr::unchecked("admin_address");
+        let sender_address =  Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: Marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
         deps.querier.with_markers(vec![test_marker]);
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(1);
         let sender_info = mock_info(admin_address.as_str(), &[]);
 
         store_test_transfer(&mut deps.storage, &Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             sender: sender_address.to_owned(),
             denom: RESTRICTED_DENOM.into(),
             amount,
@@ -664,7 +689,7 @@ mod tests {
         });
 
         let approve_transfer_msg = ExecuteMsg::ApproveTransfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
         };
 
         // execute approve transfer
@@ -680,12 +705,12 @@ mod tests {
             Ok(response) => {
                 assert_eq!(response.attributes.len(), 7);
                 assert_eq!(response.attributes[0], attr("action", Action::Approve.to_string()));
-                assert_eq!(response.attributes[1], attr("id", transfer_id));
+                assert_eq!(response.attributes[1], attr("id", TRANSFER_ID));
                 assert_eq!(response.attributes[2], attr("denom", RESTRICTED_DENOM));
                 assert_eq!(response.attributes[3], attr("amount", amount.to_string()));
                 assert_eq!(response.attributes[4], attr("sender", sender_address));
                 assert_eq!(response.attributes[5], attr("recipient", recipient_address.to_owned()));
-                assert_eq!(response.attributes[6], attr("approver", admin_address));
+                assert_eq!(response.attributes[6], attr("admin", admin_address));
 
                 assert_eq!(response.messages.len(), 1);
                 assert_eq!(
@@ -705,7 +730,7 @@ mod tests {
         }
 
         let transfer_storage = get_transfer_storage_read(&deps.storage);
-        assert_eq!(None, transfer_storage.may_load(transfer_id.as_bytes()).unwrap());
+        assert_eq!(None, transfer_storage.may_load(TRANSFER_ID.as_bytes()).unwrap());
     }
 
     #[test]
@@ -718,19 +743,18 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_adddress");
-        let sender_address =  Addr::unchecked("sender_adddress");
+        let admin_address = Addr::unchecked("admin_address");
+        let sender_address =  Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: Marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
         deps.querier.with_markers(vec![test_marker]);
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(1);
         let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
 
         let stored_transfer = Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             sender: sender_address.to_owned(),
             denom: RESTRICTED_DENOM.into(),
             amount,
@@ -739,7 +763,7 @@ mod tests {
         store_test_transfer(&mut deps.storage, &stored_transfer);
 
         let approve_transfer_msg = ExecuteMsg::ApproveTransfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
         };
 
         // execute approve transfer
@@ -754,7 +778,7 @@ mod tests {
         assert_sent_funds_unsupported_error(transfer_response);
 
         let transfer_storage = get_transfer_storage_read(&deps.storage);
-        assert_eq!(stored_transfer, transfer_storage.load(transfer_id.as_bytes()).unwrap());
+        assert_eq!(stored_transfer, transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap());
     }
 
     #[test]
@@ -767,20 +791,19 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_adddress");
-        let approver_address = Addr::unchecked("approver_adddress");
-        let sender_address =  Addr::unchecked("sender_adddress");
+        let admin_address = Addr::unchecked("admin_address");
+        let approver_address = Addr::unchecked("approver_address");
+        let sender_address =  Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: Marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
         deps.querier.with_markers(vec![test_marker]);
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(1);
         let sender_info = mock_info(approver_address.as_str(), &[]);
 
         let stored_transfer = Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             sender: sender_address.to_owned(),
             denom: RESTRICTED_DENOM.into(),
             amount,
@@ -789,7 +812,7 @@ mod tests {
         store_test_transfer(&mut deps.storage, &stored_transfer);
 
         let approve_transfer_msg = ExecuteMsg::ApproveTransfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
         };
 
         // execute approve transfer
@@ -801,7 +824,7 @@ mod tests {
         );
 
         match transfer_response {
-            Ok(response) => {
+            Ok(..) => {
                 panic!("expected error, but ok")
             }
             Err(error) =>  match error {
@@ -811,7 +834,7 @@ mod tests {
         }
 
         let transfer_storage = get_transfer_storage_read(&deps.storage);
-        assert_eq!(stored_transfer, transfer_storage.load(transfer_id.as_bytes()).unwrap());
+        assert_eq!(stored_transfer, transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap());
     }
 
     #[test]
@@ -824,12 +847,11 @@ mod tests {
             },
         );
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
-        let admin_address = Addr::unchecked("admin_adddress");
+        let admin_address = Addr::unchecked("admin_address");
         let sender_info = mock_info(admin_address.as_str(), &[]);
 
         let approve_transfer_msg = ExecuteMsg::ApproveTransfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
         };
 
         // execute approve transfer
@@ -840,29 +862,20 @@ mod tests {
             approve_transfer_msg.clone(),
         );
 
-        // verify transfer response
-        match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
-            Err(error) =>  match error {
-                ContractError::LoadTransferFailed { error } => {}
-                error => panic!("unexpected error: {:?}", error),
-            },
-        }
+        assert_load_transfer_error(transfer_response);
     }
 
     #[test]
     fn is_marker_admin_success() {
-        let admin_address = Addr::unchecked("admin_adddress");
+        let admin_address = Addr::unchecked("admin_address");
         let test_marker: Marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
         assert!(is_marker_admin(admin_address.to_owned(), test_marker.into()))
     }
 
     #[test]
     fn is_marker_admin_returns_false_with_no_permission() {
-        let admin_address = Addr::unchecked("admin_adddress");
-        let other_address = Addr::unchecked("other_adddress");
+        let admin_address = Addr::unchecked("admin_address");
+        let other_address = Addr::unchecked("other_address");
         let test_marker: Marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
         assert_eq!(false, is_marker_admin(other_address.to_owned(), test_marker.into()))
     }
@@ -910,15 +923,14 @@ mod tests {
             },
         );
 
-        let sender_address =  Addr::unchecked("sender_adddress");
+        let sender_address =  Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(3);
         let sender_info = mock_info(sender_address.as_str(), &[]);
 
         store_test_transfer(&mut deps.storage, &Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             sender: sender_address.to_owned(),
             denom: RESTRICTED_DENOM.into(),
             amount,
@@ -926,7 +938,7 @@ mod tests {
         });
 
         let cancel_transfer_msg = ExecuteMsg::CancelTransfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
         };
 
         // execute cancel transfer
@@ -942,7 +954,7 @@ mod tests {
             Ok(response) => {
                 assert_eq!(response.attributes.len(), 5);
                 assert_eq!(response.attributes[0], attr("action", Action::Cancel.to_string()));
-                assert_eq!(response.attributes[1], attr("id", transfer_id));
+                assert_eq!(response.attributes[1], attr("id", TRANSFER_ID));
                 assert_eq!(response.attributes[2], attr("denom", RESTRICTED_DENOM));
                 assert_eq!(response.attributes[3], attr("amount", amount.to_string()));
                 assert_eq!(response.attributes[4], attr("sender", sender_address.to_owned()));
@@ -965,7 +977,7 @@ mod tests {
         }
 
         let transfer_storage = get_transfer_storage_read(&deps.storage);
-        assert_eq!(None, transfer_storage.may_load(transfer_id.as_bytes()).unwrap());
+        assert_eq!(None, transfer_storage.may_load(TRANSFER_ID.as_bytes()).unwrap());
     }
 
     #[test]
@@ -981,12 +993,11 @@ mod tests {
         let sender_address =  Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(3);
         let sender_info = mock_info(sender_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
 
         let stored_transfer = Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             sender: sender_address.to_owned(),
             denom: RESTRICTED_DENOM.into(),
             amount,
@@ -995,7 +1006,7 @@ mod tests {
         store_test_transfer(&mut deps.storage, &stored_transfer);
 
         let cancel_transfer_msg = ExecuteMsg::CancelTransfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
         };
 
         // execute cancel transfer
@@ -1010,7 +1021,7 @@ mod tests {
         assert_sent_funds_unsupported_error(transfer_response);
 
         let transfer_storage = get_transfer_storage_read(&deps.storage);
-        assert_eq!(stored_transfer, transfer_storage.load(transfer_id.as_bytes()).unwrap());
+        assert_eq!(stored_transfer, transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap());
     }
 
     #[test]
@@ -1026,12 +1037,11 @@ mod tests {
         let sender_address =  Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let transfer_id = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
         let amount = Uint128::new(3);
         let sender_info = mock_info(&"other_address".to_string(), &[]);
 
         let stored_transfer = Transfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
             sender: sender_address.to_owned(),
             denom: RESTRICTED_DENOM.into(),
             amount,
@@ -1040,7 +1050,7 @@ mod tests {
         store_test_transfer(&mut deps.storage, &stored_transfer);
 
         let cancel_transfer_msg = ExecuteMsg::CancelTransfer {
-            id: transfer_id.into(),
+            id: TRANSFER_ID.into(),
         };
 
         // execute cancel transfer
@@ -1063,7 +1073,250 @@ mod tests {
         }
 
         let transfer_storage = get_transfer_storage_read(&deps.storage);
-        assert_eq!(stored_transfer, transfer_storage.load(transfer_id.as_bytes()).unwrap());
+        assert_eq!(stored_transfer, transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn cancel_transfer_unknown_transfer() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_address");
+        let sender_info = mock_info(sender_address.as_str(), &[]);
+
+        let reject_transfer_msg = ExecuteMsg::CancelTransfer {
+            id: TRANSFER_ID.into(),
+        };
+
+        // execute cancel transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            reject_transfer_msg.clone(),
+        );
+
+        assert_load_transfer_error(transfer_response);
+    }
+
+    #[test]
+    fn reject_transfer_success() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_address");
+        let admin_address =  Addr::unchecked("admin_address");
+        let recipient_address = Addr::unchecked("transfer_to");
+
+        let test_marker: Marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+        deps.querier.with_markers(vec![test_marker]);
+
+        let amount = Uint128::new(3);
+        let sender_info = mock_info(admin_address.as_str(), &[]);
+
+        store_test_transfer(&mut deps.storage, &Transfer {
+            id: TRANSFER_ID.into(),
+            sender: sender_address.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: recipient_address.to_owned(),
+        });
+
+        let reject_transfer_msg = ExecuteMsg::RejectTransfer {
+            id: TRANSFER_ID.into(),
+        };
+
+        // execute reject transfer
+        let reject_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            reject_transfer_msg.clone(),
+        );
+
+        // verify approve transfer response
+        match reject_response {
+            Ok(response) => {
+                assert_eq!(response.attributes.len(), 6);
+                assert_eq!(response.attributes[0], attr("action", Action::Reject.to_string()));
+                assert_eq!(response.attributes[1], attr("id", TRANSFER_ID));
+                assert_eq!(response.attributes[2], attr("denom", RESTRICTED_DENOM));
+                assert_eq!(response.attributes[3], attr("amount", amount.to_string()));
+                assert_eq!(response.attributes[4], attr("sender", sender_address.to_owned()));
+                assert_eq!(response.attributes[5], attr("admin", admin_address.to_owned()));
+
+                assert_eq!(response.messages.len(), 1);
+                assert_eq!(
+                    response.messages[0].msg,
+                    transfer_marker_coins(
+                        amount.u128(),
+                        RESTRICTED_DENOM.to_owned(),
+                        sender_address.to_owned(),
+                        Addr::unchecked(MOCK_CONTRACT_ADDR)
+                    )
+                        .unwrap()
+                );
+            }
+            Err(error) => {
+                panic!("failed to reject transfer: {:?}", error)
+            }
+        }
+
+        let transfer_storage = get_transfer_storage_read(&deps.storage);
+        assert_eq!(None, transfer_storage.may_load(TRANSFER_ID.as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn reject_transfer_sent_funds_returns_error() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_address");
+        let admin_address =  Addr::unchecked("admin_address");
+        let recipient_address = Addr::unchecked("transfer_to");
+
+        let test_marker: Marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+        deps.querier.with_markers(vec![test_marker]);
+
+        let amount = Uint128::new(3);
+        let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
+
+        let stored_transfer = Transfer {
+            id: TRANSFER_ID.into(),
+            sender: sender_address.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: recipient_address.to_owned(),
+        };
+        store_test_transfer(&mut deps.storage, &stored_transfer);
+
+        let reject_transfer_msg = ExecuteMsg::RejectTransfer {
+            id: TRANSFER_ID.into(),
+        };
+
+        // execute reject transfer
+        let reject_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            reject_transfer_msg.clone(),
+        );
+
+        assert_sent_funds_unsupported_error(reject_response);
+
+        let transfer_storage = get_transfer_storage_read(&deps.storage);
+        assert_eq!(stored_transfer, transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn reject_transfer_unauthorized() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let admin_address = Addr::unchecked("admin_address");
+        let sender_address =  Addr::unchecked("sender_address");
+        let recipient_address = Addr::unchecked("transfer_to");
+
+        let test_marker = setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+        deps.querier.with_markers(vec![test_marker]);
+
+        let amount = Uint128::new(3);
+        let sender_info = mock_info(sender_address.as_str(), &[]);
+
+        let stored_transfer = Transfer {
+            id: TRANSFER_ID.into(),
+            sender: sender_address.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: recipient_address.to_owned(),
+        };
+        store_test_transfer(&mut deps.storage, &stored_transfer);
+
+        let reject_transfer_msg = ExecuteMsg::RejectTransfer {
+            id: TRANSFER_ID.into(),
+        };
+
+        // execute reject transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            reject_transfer_msg.clone(),
+        );
+
+        // verify reject transfer response
+        match transfer_response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::Unauthorized { .. } => {}
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
+
+        let transfer_storage = get_transfer_storage_read(&deps.storage);
+        assert_eq!(stored_transfer, transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap());
+    }
+
+    #[test]
+    fn reject_transfer_unknown_transfer() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_address");
+        let sender_info = mock_info(sender_address.as_str(), &[]);
+
+        let reject_transfer_msg = ExecuteMsg::RejectTransfer {
+            id: TRANSFER_ID.into(),
+        };
+
+        // execute reject transfer
+        let transfer_response = execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            reject_transfer_msg.clone(),
+        );
+
+        assert_load_transfer_error(transfer_response);
+    }
+
+    fn assert_load_transfer_error(response: Result<Response<ProvenanceMsg>, ContractError>) {
+        match response {
+            Ok(response) => {
+                panic!("expected error, but ok")
+            }
+            Err(error) => match error {
+                ContractError::LoadTransferFailed { error } => {}
+                error => panic!("unexpected error: {:?}", error),
+            },
+        }
     }
 
     fn assert_sent_funds_unsupported_error(response: Result<Response<ProvenanceMsg>, ContractError>) {
