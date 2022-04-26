@@ -3,7 +3,6 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ContractError {
-
     #[error("Insufficient funds to complete the transfer")]
     InsufficientFunds,
 
@@ -31,6 +30,14 @@ pub enum ContractError {
     #[error("Only restricted markers are supported")]
     UnsupportedMarkerType,
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
+}
+
+impl From<ContractError> for StdError {
+    fn from(error: ContractError) -> Self {
+        StdError::GenericErr {
+            msg: error.to_string()
+        }
+    }
 }
 
 // A helper function for creating generic contract errors.

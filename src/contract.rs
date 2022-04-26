@@ -5,9 +5,9 @@ use cosmwasm_std::{
 };
 use provwasm_std::{Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier, ProvenanceQuery, transfer_marker_coins};
 
-use crate::error::{contract_err, ContractError};
+use crate::error::{ContractError};
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
-use crate::state::{config, get_transfer_storage, get_transfer_storage_read, State, Transfer};
+use crate::state::{config, config_read, get_transfer_storage, get_transfer_storage_read, State, Transfer};
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -272,33 +272,21 @@ fn is_marker_admin(sender: Addr, marker: Marker) -> bool {
 }
 
 
-// smart contract query entrypoint
-// #[entry_point]
-// pub fn query(deps: Deps<ProvenanceQuery>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
-//     msg.validate()?;
-//
-//     // TODO: implement
-//
-//
-//     match msg {
-//
-//     //     QueryMsg::GetAsk { id } => {
-//     //         let ask_storage_read = get_ask_storage_read(deps.storage);
-//     //         return to_binary(&ask_storage_read.load(id.as_bytes())?);
-//     //     }
-//     //     QueryMsg::GetBid { id } => {
-//     //         let bid_storage_read = get_bid_storage_read(deps.storage);
-//     //         return to_binary(&bid_storage_read.load(id.as_bytes())?);
-//     //     }
-//     //     QueryMsg::GetContractInfo {} => to_binary(&get_contract_info(deps.storage)?),
-//     //     QueryMsg::GetVersionInfo {} => to_binary(&get_version_info(deps.storage)?),
-//
-//         QueryMsg::GetContractInfo { } => to_binary(&config_read(deps.storage).load()),
-//         QueryMsg::GetVersionInfo { } => to_binary(&config_read(deps.storage).load()),
-//         QueryMsg::GetTransfer { .. } => to_binary(&config_read(deps.storage).load()),
-//         QueryMsg::GetAllTransfers { .. } => to_binary(&config_read(deps.storage).load()),
-//     }
-// }
+#[entry_point]
+pub fn query(deps: Deps<ProvenanceQuery>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    msg.validate()?;
+
+    match msg {
+        QueryMsg::GetContractInfo { } => to_binary(&config_read(deps.storage).load()?),
+        QueryMsg::GetVersionInfo { } => to_binary(
+            &cw2::get_contract_version(deps.storage)?
+        ),
+        QueryMsg::GetTransfer { id: transfer_id } => to_binary(
+            &get_transfer_storage_read(deps.storage)
+            .load(transfer_id.as_bytes())?
+        ),
+    }
+}
 
 enum Action {
     Transfer,
@@ -545,9 +533,7 @@ mod tests {
 
         // verify transfer response
         match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
+            Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
                 ContractError::InvalidFields { fields } => {
                     assert!(fields.contains(&"id".into()));
@@ -603,9 +589,7 @@ mod tests {
 
         // verify transfer response
         match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
+            Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
                 ContractError::InvalidFields { fields } => {
                     assert!(fields.contains(&"id".into()));
@@ -650,9 +634,7 @@ mod tests {
 
         // verify transfer response
         match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
+            Ok(..) => panic!("expected error, but ok"),
             Err(error) =>  match error {
                 ContractError::UnsupportedMarkerType => {}
                 error => panic!("unexpected error: {:?}", error),
@@ -1063,9 +1045,7 @@ mod tests {
 
         // verify cancel transfer response
         match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
+            Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
                 ContractError::Unauthorized { .. } => {}
                 error => panic!("unexpected error: {:?}", error),
@@ -1266,9 +1246,7 @@ mod tests {
 
         // verify reject transfer response
         match transfer_response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
+            Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
                 ContractError::Unauthorized { .. } => {}
                 error => panic!("unexpected error: {:?}", error),
@@ -1307,13 +1285,95 @@ mod tests {
         assert_load_transfer_error(transfer_response);
     }
 
+    #[test]
+    fn query_transfer_by_id_test() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let sender_address =  Addr::unchecked("sender_address");
+        let recipient_address = Addr::unchecked("transfer_to");
+
+        let amount = Uint128::new(3);
+
+        let transfer = &Transfer {
+            id: TRANSFER_ID.into(),
+            sender: sender_address.to_owned(),
+            denom: RESTRICTED_DENOM.into(),
+            amount,
+            recipient: recipient_address.to_owned(),
+        };
+        store_test_transfer(&mut deps.storage, transfer);
+
+        let query_transfer_response =
+            query(deps.as_ref(), mock_env(), QueryMsg::GetTransfer { id: TRANSFER_ID.into() });
+
+        assert_eq!(to_binary(transfer), query_transfer_response);
+    }
+
+    #[test]
+    fn query_contract_info() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let query_contract_info_response =
+            query(deps.as_ref(), mock_env(), QueryMsg::GetContractInfo {});
+
+        match query_contract_info_response {
+            Ok(contract_info) => {
+                assert_eq!(
+                    contract_info,
+                    to_binary(&config_read(&deps.storage).load().unwrap()).unwrap()
+                )
+            }
+            Err(error) => panic!("unexpected error: {:?}", error),
+        }
+    }
+
+    #[test]
+    fn query_version_info() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let result = cw2::set_contract_version(deps.as_mut().storage, CRATE_NAME, PACKAGE_VERSION);
+        match result {
+            Ok(..) => {}
+            Err(error) => panic!("unexpected error: {:?}", error)
+        }
+
+        let query_version_info_response =
+            query(deps.as_ref(), mock_env(), QueryMsg::GetVersionInfo {});
+
+        match query_version_info_response {
+            Ok(version_info) => {
+                assert_eq!(
+                    version_info,
+                    to_binary(&cw2::get_contract_version(&deps.storage).unwrap()).unwrap()
+                )
+            }
+            Err(error) => panic!("unexpected error: {:?}", error),
+        }
+    }
+
     fn assert_load_transfer_error(response: Result<Response<ProvenanceMsg>, ContractError>) {
         match response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
+            Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
-                ContractError::LoadTransferFailed { error } => {}
+                ContractError::LoadTransferFailed { .. } => {}
                 error => panic!("unexpected error: {:?}", error),
             },
         }
@@ -1321,9 +1381,7 @@ mod tests {
 
     fn assert_sent_funds_unsupported_error(response: Result<Response<ProvenanceMsg>, ContractError>) {
         match response {
-            Ok(response) => {
-                panic!("expected error, but ok")
-            }
+            Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
                 ContractError::SentFundsUnsupported => {}
                 error => panic!("unexpected error: {:?}", error),

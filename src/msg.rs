@@ -1,4 +1,4 @@
-use crate::error::{contract_err, ContractError};
+use crate::error::{ContractError};
 use cosmwasm_std::{Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,6 @@ impl Validate for InstantiateMsg {
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -94,7 +93,7 @@ impl Validate for ExecuteMsg {
                 id,
                 denom,
                 amount,
-                recipient
+                recipient,
             } => {
                 if Uuid::parse_str(id).is_err() {
                     invalid_fields.push("id");
@@ -125,7 +124,6 @@ impl Validate for ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     GetTransfer { id: String },
-    GetAllTransfers { denom: String },
     GetContractInfo {},
     GetVersionInfo {},
 }
@@ -151,11 +149,6 @@ impl Validate for QueryMsg {
                     invalid_fields.push("id");
                 }
             }
-            QueryMsg::GetAllTransfers { denom } => {
-                if denom.is_empty() {
-                    invalid_fields.push("denom");
-                }
-            }
             QueryMsg::GetContractInfo {} => {}
             QueryMsg::GetVersionInfo {} => {}
         }
@@ -171,23 +164,14 @@ impl Validate for QueryMsg {
 
 // TODO: migrate message
 
-// TODO: query response
-// We define a custom struct for each query response
-// #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-// pub struct CountResponse {
-//     pub count: i32,
-// }
-
-
 pub trait Validate {
     fn validate(&self) -> Result<(), ContractError>;
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::msg::ExecuteMsg::{ApproveTransfer, CancelTransfer, RejectTransfer, Transfer};
     use super::*;
+    use crate::msg::ExecuteMsg::{ApproveTransfer, CancelTransfer, RejectTransfer, Transfer};
 
     #[test]
     fn validate_transfer() {
@@ -195,14 +179,13 @@ mod tests {
             id: "fake-id".to_string(),
             denom: "".to_string(),
             amount: Uint128::new(0),
-            recipient: "".to_string()
+            recipient: "".to_string(),
         };
 
         let validate_response = invalid_transfer_msg.validate();
 
         match validate_response {
-            Ok(validate_response) =>
-                panic!("expected error but was ok"),
+            Ok(..) => panic!("expected error but was ok"),
             Err(error) => match error {
                 ContractError::InvalidFields { fields } => {
                     assert_eq!(4, fields.len());
@@ -225,8 +208,7 @@ mod tests {
         let validate_response = invalid_approve_msg.validate();
 
         match validate_response {
-            Ok(validate_response) =>
-                panic!("expected error but was ok"),
+            Ok(..) => panic!("expected error but was ok"),
             Err(error) => match error {
                 ContractError::InvalidFields { fields } => {
                     assert_eq!(1, fields.len());
@@ -246,8 +228,7 @@ mod tests {
         let validate_response = invalid_cancel_msg.validate();
 
         match validate_response {
-            Ok(validate_response) =>
-                panic!("expected error but was ok"),
+            Ok(..) => panic!("expected error but was ok"),
             Err(error) => match error {
                 ContractError::InvalidFields { fields } => {
                     assert_eq!(1, fields.len());
@@ -267,8 +248,7 @@ mod tests {
         let validate_response = invalid_reject_msg.validate();
 
         match validate_response {
-            Ok(validate_response) =>
-                panic!("expected error but was ok"),
+            Ok(..) => panic!("expected error but was ok"),
             Err(error) => match error {
                 ContractError::InvalidFields { fields } => {
                     assert_eq!(1, fields.len());
