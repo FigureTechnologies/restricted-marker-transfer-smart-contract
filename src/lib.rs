@@ -1,8 +1,8 @@
 pub mod contract;
 mod error;
+mod instantiate;
 pub mod integration_tests;
 pub mod msg;
 pub mod state;
-mod instantiate;
 
 pub use crate::error::ContractError;

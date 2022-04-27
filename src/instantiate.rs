@@ -1,11 +1,11 @@
-use cosmwasm_std::{attr, DepsMut, entry_point, Env, MessageInfo, Response};
-use provwasm_std::{ProvenanceMsg, ProvenanceQuery};
-use cw2::set_contract_version;
 use crate::contract::{CRATE_NAME, PACKAGE_VERSION};
-use crate::ContractError;
 use crate::error::contract_err;
 use crate::msg::{InstantiateMsg, Validate};
 use crate::state::{config, config_read, State};
+use crate::ContractError;
+use cosmwasm_std::{attr, entry_point, DepsMut, Env, MessageInfo, Response};
+use cw2::set_contract_version;
+use provwasm_std::{ProvenanceMsg, ProvenanceQuery};
 
 /// Create the initial configuration state
 #[entry_point]
@@ -15,30 +15,25 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response<ProvenanceMsg>, ContractError> {
-
     msg.validate()?;
     // Validate params
     if !info.funds.is_empty() {
         return Err(contract_err("no funds should be sent during instantiate"));
     }
     // Create and store config state.
-    let contract_info = State {
-        name: msg.name,
-    };
+    let contract_info = State { name: msg.name };
     config(deps.storage).save(&contract_info)?;
 
     set_contract_version(deps.storage, CRATE_NAME, PACKAGE_VERSION)?;
 
-
     // build response
-    Ok(Response::new()
-        .add_attributes(vec![
-            attr(
-                "contract_info",
-                format!("{:?}", config_read(deps.storage).load()?),
-            ),
-            attr("action", "init"),
-        ]))
+    Ok(Response::new().add_attributes(vec![
+        attr(
+            "contract_info",
+            format!("{:?}", config_read(deps.storage).load()?),
+        ),
+        attr("action", "init"),
+    ]))
 }
 
 #[cfg(test)]
@@ -54,7 +49,9 @@ mod tests {
 
         let contract_name = "please transfer me";
 
-        let init_msg = InstantiateMsg { name: contract_name.into() };
+        let init_msg = InstantiateMsg {
+            name: contract_name.into(),
+        };
 
         let init_response = instantiate(deps.as_mut(), mock_env(), info, init_msg.clone());
 
@@ -66,7 +63,7 @@ mod tests {
                 assert_eq!(init_response.attributes.len(), 2);
 
                 let expected_state = State {
-                    name: contract_name.into()
+                    name: contract_name.into(),
                 };
 
                 assert_eq!(

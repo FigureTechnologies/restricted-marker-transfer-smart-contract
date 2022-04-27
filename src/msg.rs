@@ -1,5 +1,5 @@
-use crate::error::{ContractError};
-use cosmwasm_std::{Uint128};
+use crate::error::ContractError;
+use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
