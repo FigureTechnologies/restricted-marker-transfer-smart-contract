@@ -37,7 +37,7 @@ jobs:
         with:
           version: '0.20.0'
           out-type: Xml
-          args: '-- --ignore-tests'
+          args: '--ignore-tests'
       - name: upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
