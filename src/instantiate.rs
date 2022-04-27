@@ -45,7 +45,6 @@ pub fn instantiate(
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_env, mock_info};
-    use cosmwasm_std::{from_binary, Addr};
     use provwasm_mocks::mock_dependencies;
 
     #[test]

@@ -514,6 +514,7 @@ dependencies = [
  "provwasm-std",
  "schemars",
  "serde",
+ "serde_json",
  "thiserror",
  "uuid",
 ]
