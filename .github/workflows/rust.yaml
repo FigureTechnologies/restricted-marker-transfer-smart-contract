@@ -35,8 +35,9 @@ jobs:
       - name: cargo tarpaulin xml report
         uses: actions-rs/tarpaulin@v0.1
         with:
-          version: '0.16.0'
+          version: '0.20.0'
           out-type: Xml
+          args: '-- --ignore-tests'
       - name: upload to codecov.io
         uses: codecov/codecov-action@v1
         with:
@@ -46,7 +47,6 @@ jobs:
         with:
           name: code-coverage-report
           path: cobertura.xml
-          args: '-- --ignore-tests'
   release:
     needs: check
     runs-on: ubuntu-latest
