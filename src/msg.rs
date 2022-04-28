@@ -39,6 +39,10 @@ impl Validate for InstantiateMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub struct MigrateMsg {}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     ApproveTransfer {
         id: String,
@@ -161,8 +165,6 @@ impl Validate for QueryMsg {
         }
     }
 }
-
-// TODO: migrate message
 
 pub trait Validate {
     fn validate(&self) -> Result<(), ContractError>;

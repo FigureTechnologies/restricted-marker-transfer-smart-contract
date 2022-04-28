@@ -1,12 +1,12 @@
 use std::fmt;
 
 use cosmwasm_std::{
-    attr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128,
+    attr, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
 };
-use cosmwasm_std::{Addr, entry_point};
+use cosmwasm_std::{entry_point, Addr};
 use provwasm_std::{
-    Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier, ProvenanceQuery,
-    transfer_marker_coins,
+    transfer_marker_coins, Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier,
+    ProvenanceQuery,
 };
 
 use crate::error::ContractError;
@@ -294,8 +294,8 @@ impl fmt::Display for Action {
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::{Addr, coin, from_binary, Storage};
-    use cosmwasm_std::testing::{MOCK_CONTRACT_ADDR, mock_env, mock_info};
+    use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
+    use cosmwasm_std::{coin, from_binary, Addr, Storage};
     use provwasm_mocks::mock_dependencies;
 
     use crate::state::get_transfer_storage_read;
