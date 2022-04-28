@@ -1,12 +1,13 @@
-use cosmwasm_std::{
-    attr, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
-};
-use cosmwasm_std::{entry_point, Addr};
-use provwasm_std::{
-    transfer_marker_coins, Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier,
-    ProvenanceQuery,
-};
 use std::fmt;
+
+use cosmwasm_std::{
+    attr, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, to_binary, Uint128,
+};
+use cosmwasm_std::{Addr, entry_point};
+use provwasm_std::{
+    Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier, ProvenanceQuery,
+    transfer_marker_coins,
+};
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
@@ -175,7 +176,7 @@ pub fn reject_transfer(
     let marker =
         ProvenanceQuerier::new(&deps.querier).get_marker_by_denom(transfer.denom.clone())?;
 
-    if !is_marker_admin(info.sender.to_owned(), marker.to_owned()) {
+    if !is_marker_admin(info.sender.to_owned(), marker) {
         return Err(ContractError::Unauthorized {
             error: String::from("MARKER_ADMIN permission is required to reject transfers"),
         });
@@ -221,7 +222,7 @@ pub fn approve_transfer(
     let marker =
         ProvenanceQuerier::new(&deps.querier).get_marker_by_denom(transfer.denom.clone())?;
 
-    if !is_marker_admin(info.sender.to_owned(), marker.to_owned()) {
+    if !is_marker_admin(info.sender.to_owned(), marker) {
         return Err(ContractError::Unauthorized {
             error: String::from("MARKER_ADMIN permission is required to approve transfers"),
         });
@@ -249,22 +250,15 @@ pub fn approve_transfer(
     Ok(response)
 }
 
+/// returns true if the sender has marker admin permissions for the given marker
 fn is_marker_admin(sender: Addr, marker: Marker) -> bool {
-    let is_admin = marker.permissions.iter().find(|grant| {
+    marker.permissions.iter().any(|grant| {
         grant.address == sender
             && grant
                 .permissions
                 .iter()
-                .any(|marker_access| match marker_access {
-                    MarkerAccess::Admin => true,
-                    _ => false,
-                })
-    });
-
-    match is_admin {
-        None => false,
-        Some(_) => true,
-    }
+                .any(|marker_access| matches!(marker_access, MarkerAccess::Admin))
+    })
 }
 
 #[entry_point]
@@ -300,11 +294,13 @@ impl fmt::Display for Action {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::state::get_transfer_storage_read;
-    use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
-    use cosmwasm_std::{coin, from_binary, Addr, Storage};
+    use cosmwasm_std::{Addr, coin, from_binary, Storage};
+    use cosmwasm_std::testing::{MOCK_CONTRACT_ADDR, mock_env, mock_info};
     use provwasm_mocks::mock_dependencies;
+
+    use crate::state::get_transfer_storage_read;
+
+    use super::*;
 
     const RESTRICTED_DENOM: &str = "restricted_1";
     const TRANSFER_ID: &str = "56253028-12f5-4d2a-a691-ebdfd2a7b865";
