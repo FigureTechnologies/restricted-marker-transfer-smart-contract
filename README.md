@@ -4,7 +4,7 @@ This contract facilitates the transfer of restricted coin between addresses.
 
 ## Assumptions
 
-This README assumes you are familiar with writing and deploying smart contract to the
+This README assumes you are familiar with writing and deploying smart contracts to the
 [provenance](https://docs.provenance.io/) blockchain.
 See the `provwasm` [tutorial](https://github.com/provenance-io/provwasm/blob/main/docs/tutorial/01-overview.md)
 for details.
@@ -136,12 +136,12 @@ to the provenance root dir (ie where the localnet was started from).
 
 ```bash
 provenanced tx wasm store restricted_marker_transfer.wasm \
---from admin1 \
---home build/node0 --keyring-backend test \
---chain-id chain-local \
---gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
---testnet \
---yes -o json  | jq
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes -o json  | jq
 ```
 
 
@@ -151,15 +151,15 @@ Instantiate the contract using the `code_id` returned from storing the Wasm. Not
 
 ```bash
 build/provenanced tx wasm instantiate 17 \
-'{"name":"marker-transfer-local1" }' \
---label restricted-marker-transfer1 \
---admin $(provenanced keys show -a admin1 --home build/node0 --keyring-backend test --testnet) \
---from admin1 \
---home build/node0 --keyring-backend test \
---chain-id chain-local \
---gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
---testnet \
---yes
+  '{"name":"marker-transfer-local1" }' \
+  --label restricted-marker-transfer1 \
+  --admin $(provenanced keys show -a admin1 --home build/node0 --keyring-backend test --testnet) \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
 ```
 
 ```text
@@ -186,54 +186,54 @@ Create a restricted marker representing private company stock for a company name
 
 ```bash
 provenanced tx marker new "50000example-co.stock" \
- --type RESTRICTED \
---from admin1 \
---home build/node0 --keyring-backend test \
---chain-id chain-local \
---gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
-    --testnet \
-    --yes
+  --type RESTRICTED \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
 ```
 Grant marker admin access to `admin1`
 ```bash
 provenanced tx marker grant $(provenanced keys show -a admin1 --home build/node0 --keyring-backend test --testnet) example-co.stock admin,withdraw,burn,mint,transfer \
---from admin1 \
---home build/node0 --keyring-backend test \
---chain-id chain-local \
---gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
-    --testnet \
-    --yes
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
 ```
 Finalize the marker
 ```bash
 provenanced tx marker finalize example-co.stock \
---from admin1 \
---home build/node0 --keyring-backend test \
---chain-id chain-local \
---gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
-    --testnet \
-    --yes
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
 ```
 Activate the marker
 ```bash
 provenanced tx marker activate example-co.stock \
---from admin1 \
---home build/node0 --keyring-backend test \
---chain-id chain-local \
---gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
-    --testnet \
-    --yes
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
 ```
 
 Grant marker transfer permission to the smart contract, so it can move coin.
 ```bash
 provenanced tx marker grant tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac example-co.stock transfer \
---from admin1 \
---home build/node0 --keyring-backend test \
---chain-id chain-local \
---gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
-    --testnet \
-    --yes
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
 ```
 
 Now distribute shares of example-co stock to `user1`
