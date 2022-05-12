@@ -1,106 +1,324 @@
-# CosmWasm Starter Pack
+# Restricted Marker Transfer Smart Contact
 
-This is a template to build smart contracts in Rust to run inside a
-[Cosmos SDK](https://github.com/cosmos/cosmos-sdk) module on all chains that enable it.
-To understand the framework better, please read the overview in the
-[cosmwasm repo](https://github.com/CosmWasm/cosmwasm/blob/master/README.md),
-and dig into the [cosmwasm docs](https://www.cosmwasm.com).
-This assumes you understand the theory and just want to get coding.
+This contract facilitates the transfer of restricted coin between addresses.
 
-## Creating a new repo from template
+## Assumptions
 
-Assuming you have a recent version of rust and cargo (v1.58.1+) installed
-(via [rustup](https://rustup.rs/)),
-then the following should get you a new repo to start a contract:
+This README assumes you are familiar with writing and deploying smart contracts to the
+[provenance](https://docs.provenance.io/) blockchain.
+See the `provwasm` [tutorial](https://github.com/provenance-io/provwasm/blob/main/docs/tutorial/01-overview.md)
+for details.
 
-Install [cargo-generate](https://github.com/ashleygwilliams/cargo-generate) and cargo-run-script.
-Unless you did that before, run this line now:
+## Blockchain Quickstart
 
-```sh
-cargo install cargo-generate --features vendored-openssl
-cargo install cargo-run-script
+Checkout provenance v1.8.2, install the `provenanced` command and start a 4-node localnet.
+
+```bash
+git clone https://github.com/provenance-io/provenance.git
+cd provenance && git checkout v1.8.2
+make install
+make localnet-start
 ```
 
-Now, use it to create your new contract.
-Go to the folder in which you want to place it and run:
+## Accounts
 
+Accounts needs to be set up for example users and marker admins.
 
-**Latest: 1.0.0-beta6**
+User 1
 
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --name PROJECT_NAME
-````
+```bash
+provenanced keys add user1 \
+    --home build/node0 --keyring-backend test --testnet --hd-path "44'/1'/0'/0/0" --output json | jq
 
-**Older Version**
-
-Pass version as branch flag:
-
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --branch <version> --name PROJECT_NAME
-````
-
-Example:
-
-```sh
-cargo generate --git https://github.com/CosmWasm/cw-template.git --branch 0.16 --name PROJECT_NAME
+{
+  "name": "user1",
+  "type": "local",
+  "address": "tp10nnm70y8zc5m8yje5zx5canyqq639j3ph7mj8p",
+  "pubkey": "tppub1addwnpepqf4feq9n484c6tvpcugkp0l78mffld8aphq8wqehx53pekcf2l5pkuajggq",
+  "mnemonic": "seminar tape camp attract student make hollow pyramid obtain bamboo exit donate dish drip text foil news film assist access pride decline reason lonely"
+}
 ```
 
-You will now have a new folder called `PROJECT_NAME` (I hope you changed that to something else)
-containing a simple working contract and build system that you can customize.
+User 2
 
-## Create a Repo
+```bash
+provenanced keys add user2 \
+    --home build/node0 --keyring-backend test --testnet --hd-path "44'/1'/0'/0/0" --output json | jq
 
-After generating, you have a initialized local git repo, but no commits, and no remote.
-Go to a server (eg. github) and create a new upstream repo (called `YOUR-GIT-URL` below).
-Then run the following:
-
-```sh
-# this is needed to create a valid Cargo.lock file (see below)
-cargo check
-git branch -M main
-git add .
-git commit -m 'Initial Commit'
-git remote add origin YOUR-GIT-URL
-git push -u origin main
+{
+  "name": "user2",
+  "type": "local",
+  "address": "tp1m4arun5y9jcwkatq2ey9wuftanm5ptzsg4ppfs",
+  "pubkey": "tppub1addwnpepqgw8y7dpx4xmlaun5u55qrq4e05jtul6nu94afq3tvr7e8d4xx6ujzf79jz",
+  "mnemonic": "immense ordinary august exclude loyal expire install tongue ski bounce sock buffalo range begin glory inch index float medal kid empty wheel badge find"
+}
 ```
 
-## CI Support
+Admin 1
 
-We have template configurations for both [GitHub Actions](.github/workflows/Basic.yml)
-and [Circle CI](.circleci/config.yml) in the generated project, so you can
-get up and running with CI right away.
+```bash
+provenanced keys add admin1 \
+    --home build/node0 --keyring-backend test --testnet --hd-path "44'/1'/0'/0/0" --output json | jq
 
-One note is that the CI runs all `cargo` commands
-with `--locked` to ensure it uses the exact same versions as you have locally. This also means
-you must have an up-to-date `Cargo.lock` file, which is not auto-generated.
-The first time you set up the project (or after adding any dep), you should ensure the
-`Cargo.lock` file is updated, so the CI will test properly. This can be done simply by
-running `cargo check` or `cargo unit-test`.
+{
+  "name": "admin1",
+  "type": "local",
+  "address": "tp15nauudez3yvrma9mfve7t9hnnnlkgc7fwps85d",
+  "pubkey": "{\"@type\":\"/cosmos.crypto.secp256k1.PubKey\",\"key\":\"AlOF+u9+kMmP3mLlny+u2S7WBgDnJqJOwzJVXCFJZOgI\"}",
+  "mnemonic": "develop glory absurd glory march valve hunt barely inform luxury ahead miss eye minimum assault meat pair shoot magic develop argue exact believe faint"
+}
+```
 
-## Using your project
+If you want to use the addresses from this document, use the mnemonics above to restore the keys
+locally.
 
-Once you have your custom repo, you should check out [Developing](./Developing.md) to explain
-more on how to run tests and develop code. Or go through the
-[online tutorial](https://docs.cosmwasm.com/) to get a better feel
-of how to develop.
+For example:
 
-[Publishing](./Publishing.md) contains useful information on how to publish your contract
-to the world, once you are ready to deploy it on a running blockchain. And
-[Importing](./Importing.md) contains information about pulling in other contracts or crates
-that have been published.
+```bash
+provenanced keys add user1 --recover \
+    --home build/node0 --keyring-backend test --testnet --hd-path "44'/1'/0'/0/0"
+```
 
-Please replace this README file with information about your specific project. You can keep
-the `Developing.md` and `Publishing.md` files as useful referenced, but please set some
-proper description in the README.
+## Fee Payment
 
-## Gitpod integration
+Fund the example accounts with `nhash` to pay network fees.
 
-[Gitpod](https://www.gitpod.io/) container-based development platform will be enabled on your project by default.
+```bash
+provenanced tx bank send \
+    $(provenanced keys show -a node0 --home build/node0 --keyring-backend test --testnet) \
+    $(provenanced keys show -a user1 --home build/node0 --keyring-backend test --testnet) \
+    100000000000nhash \
+    --from node0 \
+    --keyring-backend test \
+    --home build/node0 \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 2 \
+    --broadcast-mode block \
+    --yes \
+    --testnet -o json  | jq
+```
 
-Workspace contains:
- - **rust**: for builds
- - [wasmd](https://github.com/CosmWasm/wasmd): for local node setup and client
- - **jq**: shell JSON manipulation tool
+```bash
+provenanced tx bank send \
+    $(provenanced keys show -a node0 --home build/node0 --keyring-backend test --testnet) \
+    $(provenanced keys show -a user2 --home build/node0 --keyring-backend test --testnet) \
+    100000000000nhash \
+    --from node0 \
+    --keyring-backend test \
+    --home build/node0 \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 2 \
+    --broadcast-mode block \
+    --yes \
+    --testnet -o json  | jq
+```
 
-Follow [Gitpod Getting Started](https://www.gitpod.io/docs/getting-started) and launch your workspace.
+```bash
+provenanced tx bank send \
+    $(provenanced keys show -a node0 --home build/node0 --keyring-backend test --testnet) \
+    $(provenanced keys show -a admin1 --home build/node0 --keyring-backend test --testnet) \
+    100000000000nhash \
+    --from node0 \
+    --keyring-backend test \
+    --home build/node0 \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 2 \
+    --broadcast-mode block \
+    --yes \
+    --testnet -o json  | jq
+```
 
+
+## Store the Wasm
+
+Store the optimized smart contract Wasm on-chain. This assumes you've copied `artifacts/restricted_marker_transfer`
+to the provenance root dir (ie where the localnet was started from).
+
+```bash
+provenanced tx wasm store restricted_marker_transfer.wasm \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes -o json  | jq
+```
+
+
+## Instantiate the contract
+
+Instantiate the contract using the `code_id` returned from storing the Wasm. Note the contract address returned
+
+```bash
+build/provenanced tx wasm instantiate 17 \
+  '{"name":"marker-transfer-local1" }' \
+  --label restricted-marker-transfer1 \
+  --admin $(provenanced keys show -a admin1 --home build/node0 --keyring-backend test --testnet) \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
+```
+
+```text
+logs:
+- events:
+  - attributes:
+    - key: _contract_address
+      value: tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac
+    - key: code_id
+      value: "17"
+    type: instantiate
+  - attributes:
+    - key: action
+      value: /cosmwasm.wasm.v1.MsgInstantiateContract
+    - key: module
+      value: wasm
+    - key: sender
+      value: tp15nauudez3yvrma9mfve7t9hnnnlkgc7fwps85d
+    type: message
+```
+
+## Marker creation
+Create a restricted marker representing private company stock for a company named `example-co`
+
+```bash
+provenanced tx marker new "50000example-co.stock" \
+  --type RESTRICTED \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
+```
+Grant marker admin access to `admin1`
+```bash
+provenanced tx marker grant $(provenanced keys show -a admin1 --home build/node0 --keyring-backend test --testnet) example-co.stock admin,withdraw,burn,mint,transfer \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
+```
+Finalize the marker
+```bash
+provenanced tx marker finalize example-co.stock \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
+```
+Activate the marker
+```bash
+provenanced tx marker activate example-co.stock \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
+```
+
+Grant marker transfer permission to the smart contract, so it can move coin.
+```bash
+provenanced tx marker grant tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac example-co.stock transfer \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
+```
+
+Now distribute shares of example-co stock to `user1`
+```bash
+provenanced tx marker withdraw example-co.stock 1000example-co.stock $(provenanced keys show -a user1 --home build/node0 --keyring-backend test --testnet)  \
+  --from admin1 \
+  --home build/node0 --keyring-backend test \
+  --chain-id chain-local \
+  --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+  --testnet \
+  --yes
+```
+
+## Contract execution example
+### Transfer
+`user1` can now transfer shares of example-co stock to `user2` using the smart contract.
+
+NOTE: you can get the address for `user2` with the following command:
+
+```bash
+provenanced keys show -a user2 --home build/node0 -t
+```
+Transfer 5 shares of `example-co.stock` from user1 to user2:
+```bash
+
+# first grant authz permission so the contract can escrow the coin for the transfer
+  provenanced tx marker grant-authz \
+    tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
+    "transfer" \
+    --transfer-limit 5example-co.stock \
+    --from user1 \
+    --home build/node0 --keyring-backend test \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+    --testnet \
+    --yes -o json | jq
+
+# initiate transfer using a unique uuid as the id attribute
+provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
+    '{"transfer":{"id":"54c4f5d9-5253-43ac-9011-bbc52465581e", "denom":"example-co.stock",  "amount":"5", "recipient": "tp1m4arun5y9jcwkatq2ey9wuftanm5ptzsg4ppfs"}}' \
+    --from user1 \
+    --home build/node0 --keyring-backend test \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+    --testnet \
+    --yes -o json | jq
+```
+### Approve
+Now the marker admin can approve the transfer
+```bash
+provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
+    '{"approve_transfer":{"id":"54c4f5d9-5253-43ac-9011-bbc52465581e"}}' \
+    --from admin1 \
+    --home build/node0 --keyring-backend test \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+    --testnet \
+    --yes -o json | jq
+```
+You can check the balance of `user2` to see that the transfer was successful
+```bash
+provenanced q bank balances $(provenanced keys show -a user2 --home build/node0 --keyring-backend test --testnet) -t
+```
+## Other contract actions
+### Cancel
+A user can cancel a transfer before it is approved or rejected:
+```bash
+provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
+    '{"cancel_transfer":{"id":"54c4f5d9-5253-43ac-9011-bbc52465581e"}}' \
+    --from user1 \
+    --home build/node0 --keyring-backend test \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+    --testnet \
+    --yes -o json | jq
+```
+### Reject
+The marker admin can reject a transfer:
+```bash
+provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
+    '{"reject_transfer":{"id":"54c4f5d9-5253-43ac-9011-bbc52465581e"}}' \
+    --from admin1 \
+    --home build/node0 --keyring-backend test \
+    --chain-id chain-local \
+    --gas auto --gas-prices 1905nhash --gas-adjustment 1.3 \
+    --testnet \
+    --yes -o json | jq
+```
