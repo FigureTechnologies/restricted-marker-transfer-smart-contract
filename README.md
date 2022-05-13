@@ -9,6 +9,13 @@ This README assumes you are familiar with writing and deploying smart contracts 
 See the `provwasm` [tutorial](https://github.com/provenance-io/provwasm/blob/main/docs/tutorial/01-overview.md)
 for details.
 
+### [Provenance Testnet](https://github.com/provenance-io/testnet) Deployments
+#### [pio-testnet-1](https://github.com/provenance-io/testnet/tree/main/pio-testnet-1)
+
+| Contract Version | Code ID |
+|------------------|---------|
+| 0.1.0            | 157     |
+
 ## Blockchain Quickstart
 
 Checkout provenance v1.8.2, install the `provenanced` command and start a 4-node localnet.
