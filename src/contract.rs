@@ -11,9 +11,7 @@ use provwasm_std::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
-use crate::state::{
-    config, config_read, get_transfer_storage, get_transfer_storage_read, State, Transfer,
-};
+use crate::state::{config_read, get_transfer_storage, get_transfer_storage_read, Transfer};
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -294,6 +292,7 @@ impl fmt::Display for Action {
 
 #[cfg(test)]
 mod tests {
+    use crate::state::{config, State};
     use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
     use cosmwasm_std::{coin, from_binary, Addr, Storage};
     use provwasm_mocks::mock_dependencies;
