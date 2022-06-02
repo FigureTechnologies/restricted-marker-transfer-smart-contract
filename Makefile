@@ -37,7 +37,7 @@ optimize:
 	$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/code:Z \
 		--mount type=volume,source=restricted-marker-transfer_cache,target=/code/target \
 		--mount type=volume,source=restricted-marker-transfer_registry_cache,target=/usr/local/cargo/registry \
-		cosmwasm/rust-optimizer:0.12.5
+		cosmwasm/rust-optimizer:0.12.6
 
 .PHONY: install
 install: optimize
