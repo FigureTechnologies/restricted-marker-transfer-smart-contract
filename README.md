@@ -2,6 +2,19 @@
 
 This contract facilitates the transfer of restricted coin between addresses.
 
+## Status
+
+[![Latest Release][release-badge]][release-latest]
+[![Apache 2.0 License][license-badge]][license-url]
+[![Code Coverage][codecov-badge]][codecov-report]
+
+[license-badge]: https://img.shields.io/badge/License-Apache_2.0-blue.svg
+[license-url]: https://github.com/FigureTechnologies/restricted-marker-transfer-smart-contract/blob/main/LICENSE
+[release-badge]: https://img.shields.io/github/tag/FigureTechnologies/restricted-marker-transfer-smart-contract.svg
+[release-latest]: https://github.com/FigureTechnologies/restricted-marker-transfer-smart-contract/releases/latest
+[codecov-badge]: https://codecov.io/gh/FigureTechnologies/restricted-marker-transfer-smart-contract/branch/main/graph/badge.svg
+[codecov-report]: https://codecov.io/gh/FigureTechnologies/restricted-marker-transfer-smart-contract
+
 ## Assumptions
 
 This README assumes you are familiar with writing and deploying smart contracts to the
@@ -15,6 +28,7 @@ for details.
 | Contract Version | Code ID |
 |------------------|---------|
 | 0.1.0            | 157     |
+| 0.1.1            | 166     |
 
 ## Blockchain Quickstart
 
