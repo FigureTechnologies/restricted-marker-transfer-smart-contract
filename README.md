@@ -15,6 +15,10 @@ This contract facilitates the transfer of restricted coin between addresses.
 [codecov-badge]: https://codecov.io/gh/FigureTechnologies/restricted-marker-transfer-smart-contract/branch/main/graph/badge.svg
 [codecov-report]: https://codecov.io/gh/FigureTechnologies/restricted-marker-transfer-smart-contract
 
+## Background
+
+As a holder of a restricted marker, there is no way to transfer those coins without being granted marker transfer permissions or having an account with the permissions to initiate the transfer. This contract allows an account that holds a restricted marker to initiate a transfer that can then be approved or rejected by a marker admin. 
+
 ## Assumptions
 
 This README assumes you are familiar with writing and deploying smart contracts to the
