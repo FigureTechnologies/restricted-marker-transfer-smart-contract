@@ -1,9 +1,9 @@
 schema-version: v2
 dd-service: restricted-marker-transfer-smart-contract
-team: ENTER_GITHUB_TEAM_NAME_BEFORE_MERGING
+team: fes-backend
 contacts:
 - type: slack
-  contact: ENTER_SLACK_LINK_BEFORE_MERGING
+  contact: https://figure-group.slack.com/archives/C0172N96LE6
 repos:
 - name: GitHub Repo
   provider: github
@@ -11,4 +11,4 @@ repos:
 docs:
 - name: GitHub Team
   provider: github
-  url: https://github.com/orgs/FigureTechnologies/teams/ENTER_GITHUB_TEAM_NAME_BEFORE_MERGING/members
+  url: https://github.com/orgs/FigureTechnologies/teams/fes-backend/members
