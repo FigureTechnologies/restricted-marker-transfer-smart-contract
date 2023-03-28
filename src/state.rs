@@ -43,3 +43,11 @@ pub fn get_transfer_storage(storage: &mut dyn Storage) -> Bucket<Transfer> {
 pub fn get_transfer_storage_read(storage: &dyn Storage) -> ReadonlyBucket<Transfer> {
     bucket_read(storage, TRANSFER_KEY)
 }
+
+pub fn get_all_transfers(storage: &dyn Storage) -> Vec<Transfer> {
+    let stored = get_transfer_storage_read(storage);
+    stored
+        .range(None, None, cosmwasm_std::Order::Ascending)
+        .map(|pair| pair.unwrap().1)
+        .collect()
+}

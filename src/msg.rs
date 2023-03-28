@@ -130,6 +130,7 @@ pub enum QueryMsg {
     GetTransfer { id: String },
     GetContractInfo {},
     GetVersionInfo {},
+    GetAllTransfers {},
 }
 
 impl Validate for QueryMsg {
@@ -155,6 +156,7 @@ impl Validate for QueryMsg {
             }
             QueryMsg::GetContractInfo {} => {}
             QueryMsg::GetVersionInfo {} => {}
+            QueryMsg::GetAllTransfers {} => {}
         }
 
         match invalid_fields.len() {
