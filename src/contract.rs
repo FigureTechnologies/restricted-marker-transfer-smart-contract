@@ -11,7 +11,9 @@ use provwasm_std::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
-use crate::state::{config_read, get_transfer_storage, get_transfer_storage_read, Transfer};
+use crate::state::{
+    config_read, get_all_transfers, get_transfer_storage, get_transfer_storage_read, Transfer,
+};
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -269,6 +271,7 @@ pub fn query(deps: Deps<ProvenanceQuery>, _env: Env, msg: QueryMsg) -> StdResult
         QueryMsg::GetTransfer { id: transfer_id } => {
             to_binary(&get_transfer_storage_read(deps.storage).load(transfer_id.as_bytes())?)
         }
+        QueryMsg::GetAllTransfers {} => to_binary(&get_all_transfers(deps.storage)),
     }
 }
 
@@ -1439,6 +1442,79 @@ mod tests {
             }
             Err(error) => panic!("unexpected error: {:?}", error),
         }
+    }
+
+    #[test]
+    fn query_all_transfers() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let test_marker: Marker = setup_restricted_marker();
+        deps.querier.with_markers(vec![test_marker]);
+
+        let amount = Uint128::new(1);
+        let transfer_msg = ExecuteMsg::Transfer {
+            id: TRANSFER_ID.into(),
+            denom: RESTRICTED_DENOM.into(),
+            amount: amount.into(),
+            recipient: "transfer_to".into(),
+        };
+
+        let sender_info = mock_info("sender", &[]);
+
+        let sender_balance = coin(1, RESTRICTED_DENOM);
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
+
+        // execute create transfer
+        execute(
+            deps.as_mut(),
+            mock_env(),
+            sender_info.clone(),
+            transfer_msg.clone(),
+        )
+        .unwrap();
+
+        // verify transfer response
+        let query_all_transfers_response =
+            query(deps.as_ref(), mock_env(), QueryMsg::GetAllTransfers {}).unwrap();
+        let all_transfers: Vec<Transfer> = from_binary(&query_all_transfers_response).unwrap();
+        assert_eq!(1, all_transfers.len());
+        assert_eq!(TRANSFER_ID.to_string(), all_transfers[0].id);
+        assert_eq!(RESTRICTED_DENOM.to_string(), all_transfers[0].denom);
+        assert_eq!(amount, all_transfers[0].amount);
+        assert_eq!("transfer_to".to_string(), all_transfers[0].recipient);
+    }
+
+    #[test]
+    fn query_all_transfers_empty() {
+        let mut deps = mock_dependencies(&[]);
+        setup_test_base(
+            &mut deps.storage,
+            &State {
+                name: "contract_name".into(),
+            },
+        );
+
+        let test_marker: Marker = setup_restricted_marker();
+        deps.querier.with_markers(vec![test_marker]);
+
+        let sender_balance = coin(1, RESTRICTED_DENOM);
+        deps.querier
+            .base
+            .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
+
+        // verify transfer response
+        let query_all_transfers_response =
+            query(deps.as_ref(), mock_env(), QueryMsg::GetAllTransfers {}).unwrap();
+        let all_transfers: Vec<Transfer> = from_binary(&query_all_transfers_response).unwrap();
+        assert_eq!(0, all_transfers.len());
     }
 
     fn assert_load_transfer_error(response: Result<Response<ProvenanceMsg>, ContractError>) {

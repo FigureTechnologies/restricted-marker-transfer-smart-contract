@@ -1,5 +1,6 @@
 #!/usr/bin/make -f
 CONTAINER_RUNTIME := $(shell which docker 2>/dev/null || which podman 2>/dev/null)
+UNAME_M := $(shell uname -m)
 
 .PHONY: all
 all: clean fmt lint test schema optimize
@@ -34,10 +35,17 @@ coverage:
 
 .PHONY: optimize
 optimize:
-	$(CONTAINER_RUNTIME) run --rm -v $(CURDIR):/code:Z \
+ifeq ($(UNAME_M),arm64)
+	@docker run --rm -v $(CURDIR):/code \
+		--mount type=volume,source=restricted-marker-transfer_cache,target=/code/target \
+		--mount type=volume,source=restricted-marker-transfer_registry_cache,target=/usr/local/cargo/registry \
+		cosmwasm/rust-optimizer-arm64:0.12.6
+else
+	@docker run --rm -v $(CURDIR):/code \
 		--mount type=volume,source=restricted-marker-transfer_cache,target=/code/target \
 		--mount type=volume,source=restricted-marker-transfer_registry_cache,target=/usr/local/cargo/registry \
 		cosmwasm/rust-optimizer:0.12.6
+endif
 
 .PHONY: install
 install: optimize
