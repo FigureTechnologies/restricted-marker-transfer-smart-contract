@@ -52,6 +52,6 @@ thiserror = { version = "1.0" }
 uuid = { version= "0.8.2" }
 
 [dev-dependencies]
-cosmwasm-schema = { version = "1.0.0" }
+cosmwasm-schema = { version = "1.2.7" }
 provwasm-mocks = { version = "1.0.0" }
 cw-multi-test = "0.13"
