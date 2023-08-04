@@ -336,11 +336,11 @@ mod tests {
     use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
     use cosmwasm_std::{coin, from_binary, Addr, CosmosMsg, Storage};
     use prost::Message;
-    use provwasm_mocks::mock_provenance_dependencies;
+    use provwasm_mocks::{mock_provenance_dependencies, MockProvenanceQuerier};
     use provwasm_std::shim::Any;
     use provwasm_std::types::cosmos::auth::v1beta1::BaseAccount;
     use provwasm_std::types::provenance::marker::v1::{
-        Access, AccessGrant, MarkerType, QueryMarkerRequest, QueryMarkerResponse,
+        Access, AccessGrant, MarkerStatus, MarkerType, QueryMarkerRequest, QueryMarkerResponse,
     };
     use std::convert::TryInto;
 
@@ -362,14 +362,7 @@ mod tests {
         );
 
         let test_marker: MarkerAccount = setup_restricted_marker();
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -475,14 +468,7 @@ mod tests {
         );
 
         let test_marker: MarkerAccount = setup_restricted_marker();
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -521,14 +507,7 @@ mod tests {
         );
 
         let test_marker: MarkerAccount = setup_restricted_marker();
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(2);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -576,14 +555,7 @@ mod tests {
         );
 
         let test_marker: MarkerAccount = setup_restricted_marker();
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -631,14 +603,7 @@ mod tests {
         );
 
         let test_marker: MarkerAccount = setup_restricted_marker();
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info("sender", &[]);
@@ -745,14 +710,7 @@ mod tests {
 
         let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info(admin_address.as_str(), &[]);
@@ -850,14 +808,7 @@ mod tests {
 
         let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
@@ -910,14 +861,7 @@ mod tests {
 
         let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info(approver_address.as_str(), &[]);
@@ -1277,14 +1221,7 @@ mod tests {
 
         let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
         let sender_info = mock_info(admin_address.as_str(), &[]);
@@ -1384,14 +1321,7 @@ mod tests {
 
         let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
         let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
@@ -1442,14 +1372,7 @@ mod tests {
 
         let test_marker =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
         let sender_info = mock_info(sender_address.as_str(), &[]);
@@ -1619,14 +1542,7 @@ mod tests {
         );
 
         let test_marker: MarkerAccount = setup_restricted_marker();
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -1674,14 +1590,7 @@ mod tests {
         );
 
         let test_marker: MarkerAccount = setup_restricted_marker();
-        let mock_marker_response = QueryMarkerResponse {
-            marker: Some(Any {
-                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
-                value: test_marker.encode_to_vec(),
-            }),
-        };
-
-        QueryMarkerRequest::mock_response(&mut deps.querier, mock_marker_response);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
@@ -1748,7 +1657,7 @@ mod tests {
                     Access::Withdraw as i32,
                 ],
             }],
-            status: 0,
+            status: MarkerStatus::Active as i32,
             denom: "restricted_1".to_string(),
             supply: "1000".to_string(),
             marker_type: MarkerType::Restricted as i32,
@@ -1779,7 +1688,7 @@ mod tests {
                     Access::Withdraw as i32,
                 ],
             }],
-            status: 0,
+            status: MarkerStatus::Active as i32,
             denom: denom,
             supply: "1000".to_string(),
             marker_type: MarkerType::Restricted as i32,
@@ -1788,5 +1697,19 @@ mod tests {
             allow_forced_transfer: false,
             required_attributes: vec![],
         };
+    }
+
+    fn mock_query_marker_response(
+        marker_account: &MarkerAccount,
+        querier: &mut MockProvenanceQuerier,
+    ) {
+        let mock_marker_response = QueryMarkerResponse {
+            marker: Some(Any {
+                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
+                value: marker_account.encode_to_vec(),
+            }),
+        };
+
+        QueryMarkerRequest::mock_response(querier, mock_marker_response);
     }
 }
