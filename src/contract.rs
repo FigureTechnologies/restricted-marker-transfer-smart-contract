@@ -8,7 +8,7 @@ use cosmwasm_std::{
 use cosmwasm_std::{entry_point, Addr};
 use provwasm_std::types::cosmos::base::v1beta1::Coin;
 use provwasm_std::types::provenance::marker::v1::{
-    MarkerAccount, MarkerQuerier, MsgTransferRequest,
+    Access, MarkerAccount, MarkerQuerier, MsgTransferRequest,
 };
 
 use crate::error::ContractError;
@@ -276,12 +276,13 @@ pub fn approve_transfer(
 
 /// returns true if the sender has marker admin permissions for the given marker
 fn is_marker_admin(sender: Addr, marker: MarkerAccount) -> bool {
+    let access_admin = Access::Admin as i32;
     marker.access_control.iter().any(|grant| {
         grant.address == sender
             && grant
                 .permissions
                 .iter()
-                .any(|marker_access| matches!(marker_access, 6)) // ACCESS_ADMIN, TODO see about enum to int
+                .any(|marker_access| marker_access.to_owned() == access_admin)
     })
 }
 
@@ -339,7 +340,7 @@ mod tests {
     use provwasm_std::shim::Any;
     use provwasm_std::types::cosmos::auth::v1beta1::BaseAccount;
     use provwasm_std::types::provenance::marker::v1::{
-        AccessGrant, QueryMarkerRequest, QueryMarkerResponse,
+        Access, AccessGrant, MarkerType, QueryMarkerRequest, QueryMarkerResponse,
     };
     use std::convert::TryInto;
 
@@ -1023,7 +1024,7 @@ mod tests {
             manager: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
             access_control: vec![AccessGrant {
                 address: "some_address_without_admin".to_string(),
-                permissions: vec![7], // Transfer
+                permissions: vec![(Access::Transfer) as i32],
             }],
             status: 0,
             denom: "restricted_1".to_string(),
@@ -1738,12 +1739,19 @@ mod tests {
             manager: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
             access_control: vec![AccessGrant {
                 address: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
-                permissions: vec![1, 2, 3, 4, 5, 6], // permissions: vec![Burn, Delete, Deposit, Admin, Mint, Withdraw]
+                permissions: vec![
+                    Access::Burn as i32,
+                    Access::Delete as i32,
+                    Access::Deposit as i32,
+                    Access::Admin as i32,
+                    Access::Mint as i32,
+                    Access::Withdraw as i32,
+                ],
             }],
             status: 0,
             denom: "restricted_1".to_string(),
             supply: "1000".to_string(),
-            marker_type: 2, // MarkerType::Restricted
+            marker_type: MarkerType::Restricted as i32,
             supply_fixed: false,
             allow_governance_control: true,
             allow_forced_transfer: false,
@@ -1762,12 +1770,19 @@ mod tests {
             manager: "".to_string(),
             access_control: vec![AccessGrant {
                 address: admin.to_string(),
-                permissions: vec![1, 2, 3, 4, 5, 6], // permissions: vec![Burn, Delete, Deposit, Admin, Mint, Withdraw]
+                permissions: vec![
+                    Access::Burn as i32,
+                    Access::Delete as i32,
+                    Access::Deposit as i32,
+                    Access::Admin as i32,
+                    Access::Mint as i32,
+                    Access::Withdraw as i32,
+                ],
             }],
             status: 0,
             denom: denom,
             supply: "1000".to_string(),
-            marker_type: 2, // MarkerType::Restricted
+            marker_type: MarkerType::Restricted as i32,
             supply_fixed: false,
             allow_governance_control: false,
             allow_forced_transfer: false,
