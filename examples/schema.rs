@@ -3,7 +3,7 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use restricted_marker_transfer::msg::{ExecuteMsg, InstantiateMsg, QueryMsg};
+use restricted_marker_transfer::msg::{ExecuteMsg, InstantiateMsg};
 use restricted_marker_transfer::state::State;
 
 fn main() {

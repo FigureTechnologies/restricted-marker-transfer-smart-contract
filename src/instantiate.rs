@@ -5,16 +5,15 @@ use crate::state::{config, config_read, State};
 use crate::ContractError;
 use cosmwasm_std::{attr, entry_point, DepsMut, Env, MessageInfo, Response};
 use cw2::set_contract_version;
-use provwasm_std::{ProvenanceMsg, ProvenanceQuery};
 
 /// Create the initial configuration state
 #[entry_point]
 pub fn instantiate(
-    deps: DepsMut<ProvenanceQuery>,
+    deps: DepsMut,
     _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> Result<Response<ProvenanceMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     msg.validate()?;
     // Validate params
     if !info.funds.is_empty() {
@@ -40,11 +39,11 @@ pub fn instantiate(
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_env, mock_info};
-    use provwasm_mocks::mock_dependencies;
+    use provwasm_mocks::mock_provenance_dependencies;
 
     #[test]
     fn proper_initialization() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         let info = mock_info("contract_admin", &[]);
 
         let contract_name = "please transfer me";
