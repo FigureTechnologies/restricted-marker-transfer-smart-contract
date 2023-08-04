@@ -105,7 +105,7 @@ fn create_transfer(
         attr("action", Action::Transfer.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
         attr("recipient", &transfer.recipient),
     ]);
@@ -150,7 +150,7 @@ pub fn cancel_transfer(
         attr("action", Action::Cancel.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
     ]);
 
@@ -200,7 +200,7 @@ pub fn reject_transfer(
         attr("action", Action::Reject.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
         attr("admin", info.sender.to_owned()),
     ]);
@@ -251,7 +251,7 @@ pub fn approve_transfer(
         attr("action", Action::Approve.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
         attr("recipient", &transfer.recipient),
         attr("admin", &info.sender),
@@ -282,7 +282,7 @@ fn is_marker_admin(sender: Addr, marker: MarkerAccount) -> bool {
             && grant
                 .permissions
                 .iter()
-                .any(|marker_access| marker_access.to_owned() == access_admin)
+                .any(|marker_access| *marker_access == access_admin)
     })
 }
 
