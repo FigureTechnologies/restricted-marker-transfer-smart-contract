@@ -276,7 +276,7 @@ pub fn approve_transfer(
 
 /// returns true if the sender has marker admin permissions for the given marker
 fn is_marker_admin(sender: Addr, marker: MarkerAccount) -> bool {
-    let access_admin = Access::Admin as i32;
+    let access_admin: i32 = Access::Admin.into();
     marker.access_control.iter().any(|grant| {
         grant.address == sender
             && grant
@@ -968,7 +968,7 @@ mod tests {
             manager: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
             access_control: vec![AccessGrant {
                 address: "some_address_without_admin".to_string(),
-                permissions: vec![(Access::Transfer) as i32],
+                permissions: vec![(Access::Transfer).into()],
             }],
             status: 0,
             denom: "restricted_1".to_string(),
@@ -1649,18 +1649,18 @@ mod tests {
             access_control: vec![AccessGrant {
                 address: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
                 permissions: vec![
-                    Access::Burn as i32,
-                    Access::Delete as i32,
-                    Access::Deposit as i32,
-                    Access::Admin as i32,
-                    Access::Mint as i32,
-                    Access::Withdraw as i32,
+                    Access::Burn.into(),
+                    Access::Delete.into(),
+                    Access::Deposit.into(),
+                    Access::Admin.into(),
+                    Access::Mint.into(),
+                    Access::Withdraw.into(),
                 ],
             }],
-            status: MarkerStatus::Active as i32,
+            status: MarkerStatus::Active.into(),
             denom: "restricted_1".to_string(),
             supply: "1000".to_string(),
-            marker_type: MarkerType::Restricted as i32,
+            marker_type: MarkerType::Restricted.into(),
             supply_fixed: false,
             allow_governance_control: true,
             allow_forced_transfer: false,
@@ -1680,18 +1680,18 @@ mod tests {
             access_control: vec![AccessGrant {
                 address: admin.to_string(),
                 permissions: vec![
-                    Access::Burn as i32,
-                    Access::Delete as i32,
-                    Access::Deposit as i32,
-                    Access::Admin as i32,
-                    Access::Mint as i32,
-                    Access::Withdraw as i32,
+                    Access::Burn.into(),
+                    Access::Delete.into(),
+                    Access::Deposit.into(),
+                    Access::Admin.into(),
+                    Access::Mint.into(),
+                    Access::Withdraw.into(),
                 ],
             }],
-            status: MarkerStatus::Active as i32,
+            status: MarkerStatus::Active.into(),
             denom: denom,
             supply: "1000".to_string(),
-            marker_type: MarkerType::Restricted as i32,
+            marker_type: MarkerType::Restricted.into(),
             supply_fixed: false,
             allow_governance_control: false,
             allow_forced_transfer: false,
