@@ -1,12 +1,14 @@
+use std::convert::TryFrom;
 use std::fmt;
 
 use cosmwasm_std::{
-    attr, to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, Uint128,
+    attr, to_binary, Binary, Deps, DepsMut, Empty, Env, MessageInfo, Response, StdError, StdResult,
+    Uint128,
 };
 use cosmwasm_std::{entry_point, Addr};
-use provwasm_std::{
-    transfer_marker_coins, Marker, MarkerAccess, MarkerType, ProvenanceMsg, ProvenanceQuerier,
-    ProvenanceQuery,
+use provwasm_std::types::cosmos::base::v1beta1::Coin;
+use provwasm_std::types::provenance::marker::v1::{
+    Access, MarkerAccount, MarkerQuerier, MsgTransferRequest,
 };
 
 use crate::error::ContractError;
@@ -21,11 +23,11 @@ pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 // smart contract execute entrypoint
 #[entry_point]
 pub fn execute(
-    deps: DepsMut<ProvenanceQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> Result<Response<ProvenanceMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     msg.validate()?;
 
     match msg {
@@ -42,14 +44,14 @@ pub fn execute(
 }
 
 fn create_transfer(
-    deps: DepsMut<ProvenanceQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     id: String,
     denom: String,
     amount: Uint128,
     recipient: String,
-) -> Result<Response<ProvenanceMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let transfer = Transfer {
         id,
         sender: info.sender.to_owned(),
@@ -58,10 +60,12 @@ fn create_transfer(
         recipient: deps.api.addr_validate(&recipient)?,
     };
 
+    let querier = MarkerQuerier::new(&deps.querier);
+
     let is_restricted_marker = matches!(
-        ProvenanceQuerier::new(&deps.querier).get_marker_by_denom(transfer.denom.clone()),
-        Ok(Marker {
-            marker_type: MarkerType::Restricted,
+        get_marker_by_denom(transfer.denom.clone(), &querier),
+        Ok(MarkerAccount {
+            marker_type: 2, // MarkerType::Restricted,
             ..
         })
     );
@@ -101,27 +105,32 @@ fn create_transfer(
         attr("action", Action::Transfer.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
         attr("recipient", &transfer.recipient),
     ]);
 
-    response = response.add_message(transfer_marker_coins(
-        transfer.amount.into(),
-        transfer.denom.to_owned(),
-        env.contract.address,
-        transfer.sender,
-    )?);
+    let coin = Coin {
+        denom: transfer.denom.to_owned(),
+        amount: transfer.amount.into(),
+    };
+
+    response = response.add_message(MsgTransferRequest {
+        amount: Some(coin),
+        to_address: env.contract.address.to_string(),
+        from_address: transfer.sender.to_string(),
+        administrator: env.contract.address.to_string(),
+    });
 
     Ok(response)
 }
 
 pub fn cancel_transfer(
-    deps: DepsMut<ProvenanceQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     transfer_id: String,
-) -> Result<Response<ProvenanceMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let transfer_storage_read = get_transfer_storage_read(deps.storage);
     let transfer = transfer_storage_read
         .load(transfer_id.as_bytes())
@@ -141,16 +150,21 @@ pub fn cancel_transfer(
         attr("action", Action::Cancel.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
     ]);
 
-    response = response.add_message(transfer_marker_coins(
-        transfer.amount.into(),
-        transfer.denom.to_owned(),
-        transfer.sender,
-        env.contract.address,
-    )?);
+    let coin = Coin {
+        denom: transfer.denom.to_owned(),
+        amount: transfer.amount.into(),
+    };
+
+    response = response.add_message(MsgTransferRequest {
+        amount: Some(coin),
+        to_address: transfer.sender.to_string(),
+        from_address: env.contract.address.to_string(),
+        administrator: env.contract.address.to_string(),
+    });
 
     // finally remove the transfer from storage
     get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
@@ -159,11 +173,11 @@ pub fn cancel_transfer(
 }
 
 pub fn reject_transfer(
-    deps: DepsMut<ProvenanceQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     transfer_id: String,
-) -> Result<Response<ProvenanceMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let transfer_storage_read = get_transfer_storage_read(deps.storage);
     let transfer = transfer_storage_read
         .load(transfer_id.as_bytes())
@@ -173,8 +187,8 @@ pub fn reject_transfer(
         return Err(ContractError::SentFundsUnsupported);
     }
 
-    let marker =
-        ProvenanceQuerier::new(&deps.querier).get_marker_by_denom(transfer.denom.clone())?;
+    let querier = MarkerQuerier::new(&deps.querier);
+    let marker = get_marker_by_denom(transfer.denom.clone(), &querier)?;
 
     if !is_marker_admin(info.sender.to_owned(), marker) {
         return Err(ContractError::Unauthorized {
@@ -186,17 +200,22 @@ pub fn reject_transfer(
         attr("action", Action::Reject.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
         attr("admin", info.sender.to_owned()),
     ]);
 
-    response = response.add_message(transfer_marker_coins(
-        transfer.amount.into(),
-        transfer.denom.to_owned(),
-        transfer.sender,
-        env.contract.address,
-    )?);
+    let coin = Coin {
+        denom: transfer.denom.to_owned(),
+        amount: transfer.amount.into(),
+    };
+
+    response = response.add_message(MsgTransferRequest {
+        amount: Some(coin),
+        to_address: transfer.sender.to_string(),
+        from_address: env.contract.address.to_string(),
+        administrator: env.contract.address.to_string(),
+    });
 
     // finally remove the transfer from storage
     get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
@@ -205,11 +224,11 @@ pub fn reject_transfer(
 }
 
 pub fn approve_transfer(
-    deps: DepsMut<ProvenanceQuery>,
+    deps: DepsMut,
     env: Env,
     info: MessageInfo,
     transfer_id: String,
-) -> Result<Response<ProvenanceMsg>, ContractError> {
+) -> Result<Response, ContractError> {
     let transfer_storage_read = get_transfer_storage_read(deps.storage);
     let transfer = transfer_storage_read
         .load(transfer_id.as_bytes())
@@ -219,8 +238,8 @@ pub fn approve_transfer(
         return Err(ContractError::SentFundsUnsupported);
     }
 
-    let marker =
-        ProvenanceQuerier::new(&deps.querier).get_marker_by_denom(transfer.denom.clone())?;
+    let querier = MarkerQuerier::new(&deps.querier);
+    let marker = get_marker_by_denom(transfer.denom.clone(), &querier)?;
 
     if !is_marker_admin(info.sender.to_owned(), marker) {
         return Err(ContractError::Unauthorized {
@@ -232,18 +251,23 @@ pub fn approve_transfer(
         attr("action", Action::Approve.to_string()),
         attr("id", &transfer.id),
         attr("denom", &transfer.denom),
-        attr("amount", &transfer.amount.to_string()),
+        attr("amount", transfer.amount.to_string()),
         attr("sender", &transfer.sender),
         attr("recipient", &transfer.recipient),
         attr("admin", &info.sender),
     ]);
 
-    response = response.add_message(transfer_marker_coins(
-        transfer.amount.into(),
-        transfer.denom.to_owned(),
-        transfer.recipient.to_owned(),
-        env.contract.address.to_owned(),
-    )?);
+    let coin = Coin {
+        denom: transfer.denom.to_owned(),
+        amount: transfer.amount.into(),
+    };
+
+    response = response.add_message(MsgTransferRequest {
+        amount: Some(coin),
+        to_address: transfer.recipient.to_owned().to_string(),
+        from_address: env.contract.address.to_string(),
+        administrator: env.contract.address.to_string(),
+    });
 
     // finally remove the transfer from storage
     get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
@@ -251,18 +275,31 @@ pub fn approve_transfer(
 }
 
 /// returns true if the sender has marker admin permissions for the given marker
-fn is_marker_admin(sender: Addr, marker: Marker) -> bool {
-    marker.permissions.iter().any(|grant| {
+fn is_marker_admin(sender: Addr, marker: MarkerAccount) -> bool {
+    let access_admin: i32 = Access::Admin.into();
+    marker.access_control.iter().any(|grant| {
         grant.address == sender
             && grant
                 .permissions
                 .iter()
-                .any(|marker_access| matches!(marker_access, MarkerAccess::Admin))
+                .any(|marker_access| *marker_access == access_admin)
     })
 }
 
+fn get_marker_by_denom(denom: String, querier: &MarkerQuerier<Empty>) -> StdResult<MarkerAccount> {
+    let response = querier.marker(denom)?;
+    if let Some(marker) = response.marker {
+        return if let Ok(account) = MarkerAccount::try_from(marker) {
+            Ok(account)
+        } else {
+            Err(StdError::generic_err("unable to type-cast marker account"))
+        };
+    }
+    Err(StdError::generic_err("no marker found for denom"))
+}
+
 #[entry_point]
-pub fn query(deps: Deps<ProvenanceQuery>, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     msg.validate()?;
 
     match msg {
@@ -297,8 +334,15 @@ impl fmt::Display for Action {
 mod tests {
     use crate::state::{config, State};
     use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
-    use cosmwasm_std::{coin, from_binary, Addr, Storage};
-    use provwasm_mocks::mock_dependencies;
+    use cosmwasm_std::{coin, from_binary, Addr, CosmosMsg, Storage};
+    use prost::Message;
+    use provwasm_mocks::{mock_provenance_dependencies, MockProvenanceQuerier};
+    use provwasm_std::shim::Any;
+    use provwasm_std::types::cosmos::auth::v1beta1::BaseAccount;
+    use provwasm_std::types::provenance::marker::v1::{
+        Access, AccessGrant, MarkerStatus, MarkerType, QueryMarkerRequest, QueryMarkerResponse,
+    };
+    use std::convert::TryInto;
 
     use crate::state::get_transfer_storage_read;
 
@@ -309,7 +353,7 @@ mod tests {
 
     #[test]
     fn create_transfer_success() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -317,8 +361,8 @@ mod tests {
             },
         );
 
-        let test_marker: Marker = setup_restricted_marker();
-        deps.querier.with_markers(vec![test_marker]);
+        let test_marker: MarkerAccount = setup_restricted_marker();
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -332,7 +376,7 @@ mod tests {
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         let recipient = "transfer_to";
@@ -344,6 +388,11 @@ mod tests {
             sender_info.clone(),
             transfer_msg.clone(),
         );
+
+        let expected_coin = Coin {
+            denom: RESTRICTED_DENOM.to_owned(),
+            amount: amount.into(),
+        };
 
         // verify transfer response
         match transfer_response {
@@ -363,16 +412,23 @@ mod tests {
                 assert_eq!(response.attributes[5], attr("recipient", recipient));
 
                 assert_eq!(response.messages.len(), 1);
-                assert_eq!(
-                    response.messages[0].msg,
-                    transfer_marker_coins(
-                        amount.u128(),
-                        RESTRICTED_DENOM.to_owned(),
-                        Addr::unchecked(MOCK_CONTRACT_ADDR),
-                        sender_info.clone().sender
-                    )
-                    .unwrap()
-                );
+
+                let expected_message: Binary = MsgTransferRequest {
+                    amount: Some(expected_coin),
+                    from_address: sender_info.clone().sender.to_string(),
+                    to_address: MOCK_CONTRACT_ADDR.to_owned(),
+                    administrator: MOCK_CONTRACT_ADDR.to_owned(),
+                }
+                .try_into()
+                .unwrap();
+
+                match &response.messages[0].msg {
+                    CosmosMsg::Stargate { type_url, value } => {
+                        assert_eq!(type_url, "/provenance.marker.v1.MsgTransferRequest");
+                        assert_eq!(value, &expected_message);
+                    }
+                    _ => panic!("unexpected cosmos message"),
+                }
             }
             Err(error) => {
                 panic!("failed to create transfer: {:?}", error)
@@ -403,7 +459,7 @@ mod tests {
 
     #[test]
     fn create_transfer_with_funds_throws_error() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -411,8 +467,8 @@ mod tests {
             },
         );
 
-        let test_marker: Marker = setup_restricted_marker();
-        deps.querier.with_markers(vec![test_marker]);
+        let test_marker: MarkerAccount = setup_restricted_marker();
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -426,7 +482,7 @@ mod tests {
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         // execute create transfer
@@ -442,7 +498,7 @@ mod tests {
 
     #[test]
     fn create_transfer_insufficient_funds_throws_error() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -450,8 +506,8 @@ mod tests {
             },
         );
 
-        let test_marker: Marker = setup_restricted_marker();
-        deps.querier.with_markers(vec![test_marker]);
+        let test_marker: MarkerAccount = setup_restricted_marker();
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(2);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -465,7 +521,7 @@ mod tests {
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         // execute create transfer
@@ -490,7 +546,7 @@ mod tests {
 
     #[test]
     fn create_transfer_invalid_data() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -498,8 +554,8 @@ mod tests {
             },
         );
 
-        let test_marker: Marker = setup_restricted_marker();
-        deps.querier.with_markers(vec![test_marker]);
+        let test_marker: MarkerAccount = setup_restricted_marker();
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -513,7 +569,7 @@ mod tests {
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         // execute create transfer
@@ -538,7 +594,7 @@ mod tests {
 
     #[test]
     fn create_transfer_existing_id() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -546,8 +602,8 @@ mod tests {
             },
         );
 
-        let test_marker: Marker = setup_restricted_marker();
-        deps.querier.with_markers(vec![test_marker]);
+        let test_marker: MarkerAccount = setup_restricted_marker();
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info("sender", &[]);
@@ -572,7 +628,7 @@ mod tests {
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         // execute create transfer
@@ -597,7 +653,7 @@ mod tests {
 
     #[test]
     fn create_transfer_unrestricted_marker_throws_error() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -617,7 +673,7 @@ mod tests {
 
         let sender_balance = coin(amount.u128(), "unrestricted-marker");
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         // execute create transfer
@@ -640,7 +696,7 @@ mod tests {
 
     #[test]
     fn approve_transfer_success() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -652,9 +708,9 @@ mod tests {
         let sender_address = Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let test_marker: Marker =
+        let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        deps.querier.with_markers(vec![test_marker]);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info(admin_address.as_str(), &[]);
@@ -682,6 +738,11 @@ mod tests {
             approve_transfer_msg.clone(),
         );
 
+        let expected_coin = Coin {
+            denom: RESTRICTED_DENOM.to_owned(),
+            amount: amount.into(),
+        };
+
         // verify approve transfer response
         match transfer_response {
             Ok(response) => {
@@ -701,16 +762,23 @@ mod tests {
                 assert_eq!(response.attributes[6], attr("admin", admin_address));
 
                 assert_eq!(response.messages.len(), 1);
-                assert_eq!(
-                    response.messages[0].msg,
-                    transfer_marker_coins(
-                        amount.u128(),
-                        RESTRICTED_DENOM.to_owned(),
-                        recipient_address,
-                        Addr::unchecked(MOCK_CONTRACT_ADDR)
-                    )
-                    .unwrap()
-                );
+
+                let expected_message: Binary = MsgTransferRequest {
+                    amount: Some(expected_coin),
+                    from_address: MOCK_CONTRACT_ADDR.to_owned(),
+                    to_address: recipient_address.to_string(),
+                    administrator: MOCK_CONTRACT_ADDR.to_owned(),
+                }
+                .try_into()
+                .unwrap();
+
+                match &response.messages[0].msg {
+                    CosmosMsg::Stargate { type_url, value } => {
+                        assert_eq!(type_url, "/provenance.marker.v1.MsgTransferRequest");
+                        assert_eq!(value, &expected_message);
+                    }
+                    _ => panic!("unexpected cosmos message"),
+                }
             }
             Err(error) => {
                 panic!("failed to create transfer: {:?}", error)
@@ -726,7 +794,7 @@ mod tests {
 
     #[test]
     fn approve_transfer_sent_funds_returns_error() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -738,9 +806,9 @@ mod tests {
         let sender_address = Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let test_marker: Marker =
+        let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        deps.querier.with_markers(vec![test_marker]);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
@@ -778,7 +846,7 @@ mod tests {
 
     #[test]
     fn approve_transfer_unauthorized() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -791,9 +859,9 @@ mod tests {
         let sender_address = Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let test_marker: Marker =
+        let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        deps.querier.with_markers(vec![test_marker]);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let sender_info = mock_info(approver_address.as_str(), &[]);
@@ -838,7 +906,7 @@ mod tests {
 
     #[test]
     fn approve_transfer_unknown_transfer() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -867,7 +935,7 @@ mod tests {
     #[test]
     fn is_marker_admin_success() {
         let admin_address = Addr::unchecked("admin_address");
-        let test_marker: Marker =
+        let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
         assert!(is_marker_admin(
             admin_address.to_owned(),
@@ -879,7 +947,7 @@ mod tests {
     fn is_marker_admin_returns_false_with_no_permission() {
         let admin_address = Addr::unchecked("admin_address");
         let other_address = Addr::unchecked("other_address");
-        let test_marker: Marker =
+        let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
         assert_eq!(
             false,
@@ -890,32 +958,27 @@ mod tests {
     #[test]
     fn is_marker_admin_returns_false_without_admin_permission() {
         let non_admin_address = Addr::unchecked("some_address_without_admin");
-        let marker_json = b"{
-              \"address\": \"tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ\",
-              \"coins\": [
-                {
-                  \"denom\": \"restricted_1\",
-                  \"amount\": \"1000\"
-                }
-              ],
-              \"account_number\": 10,
-              \"sequence\": 0,
-              \"permissions\": [
-                {
-                  \"permissions\": [
-                    \"transfer\"
-                  ],
-                  \"address\": \"some_address_without_admin\"
-                }
-              ],
-              \"status\": \"active\",
-              \"denom\": \"restricted_1\",
-              \"total_supply\": \"1000\",
-              \"marker_type\": \"restricted\",
-              \"supply_fixed\": false
-            }";
-
-        let test_marker: Marker = from_binary(&Binary::from(marker_json)).unwrap();
+        let test_marker: MarkerAccount = MarkerAccount {
+            base_account: Some(BaseAccount {
+                address: "tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ".to_string(),
+                pub_key: None,
+                account_number: 10,
+                sequence: 0,
+            }),
+            manager: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
+            access_control: vec![AccessGrant {
+                address: "some_address_without_admin".to_string(),
+                permissions: vec![(Access::Transfer).into()],
+            }],
+            status: 0,
+            denom: "restricted_1".to_string(),
+            supply: "1000".to_string(),
+            marker_type: 0,
+            supply_fixed: false,
+            allow_governance_control: true,
+            allow_forced_transfer: false,
+            required_attributes: vec![],
+        };
 
         assert_eq!(
             false,
@@ -925,7 +988,7 @@ mod tests {
 
     #[test]
     fn cancel_transfer_success() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -962,6 +1025,11 @@ mod tests {
             cancel_transfer_msg.clone(),
         );
 
+        let expected_coin = Coin {
+            denom: RESTRICTED_DENOM.to_owned(),
+            amount: amount.into(),
+        };
+
         // verify approve transfer response
         match cancel_response {
             Ok(response) => {
@@ -979,16 +1047,23 @@ mod tests {
                 );
 
                 assert_eq!(response.messages.len(), 1);
-                assert_eq!(
-                    response.messages[0].msg,
-                    transfer_marker_coins(
-                        amount.u128(),
-                        RESTRICTED_DENOM.to_owned(),
-                        sender_address.to_owned(),
-                        Addr::unchecked(MOCK_CONTRACT_ADDR)
-                    )
-                    .unwrap()
-                );
+
+                let expected_message: Binary = MsgTransferRequest {
+                    amount: Some(expected_coin),
+                    from_address: MOCK_CONTRACT_ADDR.to_owned(),
+                    to_address: sender_info.clone().sender.to_string(),
+                    administrator: MOCK_CONTRACT_ADDR.to_owned(),
+                }
+                .try_into()
+                .unwrap();
+
+                match &response.messages[0].msg {
+                    CosmosMsg::Stargate { type_url, value } => {
+                        assert_eq!(type_url, "/provenance.marker.v1.MsgTransferRequest");
+                        assert_eq!(value, &expected_message);
+                    }
+                    _ => panic!("unexpected cosmos message"),
+                }
             }
             Err(error) => {
                 panic!("failed to cancel transfer: {:?}", error)
@@ -1004,7 +1079,7 @@ mod tests {
 
     #[test]
     fn cancel_transfer_sent_funds_returns_error() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1051,7 +1126,7 @@ mod tests {
 
     #[test]
     fn cancel_transfer_unauthorized() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1104,7 +1179,7 @@ mod tests {
 
     #[test]
     fn cancel_transfer_unknown_transfer() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1132,7 +1207,7 @@ mod tests {
 
     #[test]
     fn reject_transfer_success() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1144,9 +1219,9 @@ mod tests {
         let admin_address = Addr::unchecked("admin_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let test_marker: Marker =
+        let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        deps.querier.with_markers(vec![test_marker]);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
         let sender_info = mock_info(admin_address.as_str(), &[]);
@@ -1174,6 +1249,11 @@ mod tests {
             reject_transfer_msg.clone(),
         );
 
+        let expected_coin = Coin {
+            denom: RESTRICTED_DENOM.to_owned(),
+            amount: amount.into(),
+        };
+
         // verify approve transfer response
         match reject_response {
             Ok(response) => {
@@ -1195,16 +1275,23 @@ mod tests {
                 );
 
                 assert_eq!(response.messages.len(), 1);
-                assert_eq!(
-                    response.messages[0].msg,
-                    transfer_marker_coins(
-                        amount.u128(),
-                        RESTRICTED_DENOM.to_owned(),
-                        sender_address.to_owned(),
-                        Addr::unchecked(MOCK_CONTRACT_ADDR)
-                    )
-                    .unwrap()
-                );
+
+                let expected_message: Binary = MsgTransferRequest {
+                    amount: Some(expected_coin),
+                    to_address: sender_address.to_string(),
+                    from_address: MOCK_CONTRACT_ADDR.to_owned(),
+                    administrator: MOCK_CONTRACT_ADDR.to_owned(),
+                }
+                .try_into()
+                .unwrap();
+
+                match &response.messages[0].msg {
+                    CosmosMsg::Stargate { type_url, value } => {
+                        assert_eq!(type_url, "/provenance.marker.v1.MsgTransferRequest");
+                        assert_eq!(value, &expected_message);
+                    }
+                    _ => panic!("unexpected cosmos message"),
+                }
             }
             Err(error) => {
                 panic!("failed to reject transfer: {:?}", error)
@@ -1220,7 +1307,7 @@ mod tests {
 
     #[test]
     fn reject_transfer_sent_funds_returns_error() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1232,9 +1319,9 @@ mod tests {
         let admin_address = Addr::unchecked("admin_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
-        let test_marker: Marker =
+        let test_marker: MarkerAccount =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        deps.querier.with_markers(vec![test_marker]);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
         let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
@@ -1271,7 +1358,7 @@ mod tests {
 
     #[test]
     fn reject_transfer_unauthorized() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1285,7 +1372,7 @@ mod tests {
 
         let test_marker =
             setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        deps.querier.with_markers(vec![test_marker]);
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
         let sender_info = mock_info(sender_address.as_str(), &[]);
@@ -1329,7 +1416,7 @@ mod tests {
 
     #[test]
     fn reject_transfer_unknown_transfer() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1357,7 +1444,7 @@ mod tests {
 
     #[test]
     fn query_transfer_by_id_test() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1392,7 +1479,7 @@ mod tests {
 
     #[test]
     fn query_contract_info() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1416,7 +1503,7 @@ mod tests {
 
     #[test]
     fn query_version_info() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1446,7 +1533,7 @@ mod tests {
 
     #[test]
     fn query_all_transfers() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1454,8 +1541,8 @@ mod tests {
             },
         );
 
-        let test_marker: Marker = setup_restricted_marker();
-        deps.querier.with_markers(vec![test_marker]);
+        let test_marker: MarkerAccount = setup_restricted_marker();
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
         let transfer_msg = ExecuteMsg::Transfer {
@@ -1469,7 +1556,7 @@ mod tests {
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         // execute create transfer
@@ -1494,7 +1581,7 @@ mod tests {
 
     #[test]
     fn query_all_transfers_empty() {
-        let mut deps = mock_dependencies(&[]);
+        let mut deps = mock_provenance_dependencies();
         setup_test_base(
             &mut deps.storage,
             &State {
@@ -1502,12 +1589,12 @@ mod tests {
             },
         );
 
-        let test_marker: Marker = setup_restricted_marker();
-        deps.querier.with_markers(vec![test_marker]);
+        let test_marker: MarkerAccount = setup_restricted_marker();
+        mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let sender_balance = coin(1, RESTRICTED_DENOM);
         deps.querier
-            .base
+            .mock_querier
             .update_balance(Addr::unchecked("sender"), vec![sender_balance]);
 
         // verify transfer response
@@ -1517,7 +1604,7 @@ mod tests {
         assert_eq!(0, all_transfers.len());
     }
 
-    fn assert_load_transfer_error(response: Result<Response<ProvenanceMsg>, ContractError>) {
+    fn assert_load_transfer_error(response: Result<Response, ContractError>) {
         match response {
             Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
@@ -1527,9 +1614,7 @@ mod tests {
         }
     }
 
-    fn assert_sent_funds_unsupported_error(
-        response: Result<Response<ProvenanceMsg>, ContractError>,
-    ) {
+    fn assert_sent_funds_unsupported_error(response: Result<Response, ContractError>) {
         match response {
             Ok(..) => panic!("expected error, but ok"),
             Err(error) => match error {
@@ -1552,75 +1637,79 @@ mod tests {
         };
     }
 
-    fn setup_restricted_marker() -> Marker {
-        let marker_json = b"{
-              \"address\": \"tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ\",
-              \"coins\": [
-                {
-                  \"denom\": \"restricted_1\",
-                  \"amount\": \"1000\"
-                }
-              ],
-              \"account_number\": 10,
-              \"sequence\": 0,
-              \"permissions\": [
-                {
-                  \"permissions\": [
-                    \"burn\",
-                    \"delete\",
-                    \"deposit\",
-                    \"admin\",
-                    \"mint\",
-                    \"withdraw\"
-                  ],
-                  \"address\": \"tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu\"
-                }
-              ],
-              \"status\": \"active\",
-              \"denom\": \"restricted_1\",
-              \"total_supply\": \"1000\",
-              \"marker_type\": \"restricted\",
-              \"supply_fixed\": false
-            }";
-
-        return from_binary(&Binary::from(marker_json)).unwrap();
+    fn setup_restricted_marker() -> MarkerAccount {
+        return MarkerAccount {
+            base_account: Some(BaseAccount {
+                address: "tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ".to_string(),
+                pub_key: None,
+                account_number: 10,
+                sequence: 0,
+            }),
+            manager: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
+            access_control: vec![AccessGrant {
+                address: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
+                permissions: vec![
+                    Access::Burn.into(),
+                    Access::Delete.into(),
+                    Access::Deposit.into(),
+                    Access::Admin.into(),
+                    Access::Mint.into(),
+                    Access::Withdraw.into(),
+                ],
+            }],
+            status: MarkerStatus::Active.into(),
+            denom: "restricted_1".to_string(),
+            supply: "1000".to_string(),
+            marker_type: MarkerType::Restricted.into(),
+            supply_fixed: false,
+            allow_governance_control: true,
+            allow_forced_transfer: false,
+            required_attributes: vec![],
+        };
     }
 
-    fn setup_restricted_marker_admin(denom: String, admin: Addr) -> Marker {
-        let marker_json = format!(
-            "{{
-              \"address\": \"tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ\",
-              \"coins\": [
-                {{
-                  \"denom\": \"{}\",
-                  \"amount\": \"1000\"
-                }}
-              ],
-              \"account_number\": 10,
-              \"sequence\": 0,
-              \"permissions\": [
-                {{
-                  \"permissions\": [
-                    \"burn\",
-                    \"delete\",
-                    \"deposit\",
-                    \"admin\",
-                    \"mint\",
-                    \"withdraw\"
-                  ],
-                  \"address\": \"{}\"
-                }}
-              ],
-              \"status\": \"active\",
-              \"denom\": \"restricted_1\",
-              \"total_supply\": \"1000\",
-              \"marker_type\": \"restricted\",
-              \"supply_fixed\": false
-            }}",
-            denom,
-            admin.into_string()
-        );
+    fn setup_restricted_marker_admin(denom: String, admin: Addr) -> MarkerAccount {
+        return MarkerAccount {
+            base_account: Some(BaseAccount {
+                address: "tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ".to_string(),
+                pub_key: None,
+                account_number: 10,
+                sequence: 0,
+            }),
+            manager: "".to_string(),
+            access_control: vec![AccessGrant {
+                address: admin.to_string(),
+                permissions: vec![
+                    Access::Burn.into(),
+                    Access::Delete.into(),
+                    Access::Deposit.into(),
+                    Access::Admin.into(),
+                    Access::Mint.into(),
+                    Access::Withdraw.into(),
+                ],
+            }],
+            status: MarkerStatus::Active.into(),
+            denom: denom,
+            supply: "1000".to_string(),
+            marker_type: MarkerType::Restricted.into(),
+            supply_fixed: false,
+            allow_governance_control: false,
+            allow_forced_transfer: false,
+            required_attributes: vec![],
+        };
+    }
 
-        return from_binary(&Binary::from(marker_json.as_bytes())).unwrap();
+    fn mock_query_marker_response(
+        marker_account: &MarkerAccount,
+        querier: &mut MockProvenanceQuerier,
+    ) {
+        let mock_marker_response = QueryMarkerResponse {
+            marker: Some(Any {
+                type_url: "/provenance.marker.v1.MarkerAccount".to_string(),
+                value: marker_account.encode_to_vec(),
+            }),
+        };
+
+        QueryMarkerRequest::mock_response(querier, mock_marker_response);
     }
 }

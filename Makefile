@@ -39,12 +39,12 @@ ifeq ($(UNAME_M),arm64)
 	@docker run --rm -v $(CURDIR):/code \
 		--mount type=volume,source=restricted-marker-transfer_cache,target=/code/target \
 		--mount type=volume,source=restricted-marker-transfer_registry_cache,target=/usr/local/cargo/registry \
-		cosmwasm/rust-optimizer-arm64:0.12.6
+		cosmwasm/rust-optimizer-arm64:0.12.13
 else
 	@docker run --rm -v $(CURDIR):/code \
 		--mount type=volume,source=restricted-marker-transfer_cache,target=/code/target \
 		--mount type=volume,source=restricted-marker-transfer_registry_cache,target=/usr/local/cargo/registry \
-		cosmwasm/rust-optimizer:0.12.6
+		cosmwasm/rust-optimizer:0.12.13
 endif
 
 .PHONY: install
