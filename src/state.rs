@@ -3,11 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Storage, Uint128};
 use cosmwasm_storage::{
-    bucket, bucket_read, singleton, singleton_read, Bucket, ReadonlyBucket, ReadonlySingleton,
-    Singleton,
+    bucket, bucket_read, Bucket, ReadonlyBucket,
 };
-
-pub static CONFIG_KEY: &[u8] = b"config";
+use cw_storage_plus::Item;
 
 pub static TRANSFER_KEY: &[u8] = b"transfer";
 
@@ -28,13 +26,7 @@ pub struct Transfer {
     pub recipient: Addr,
 }
 
-pub fn config(storage: &mut dyn Storage) -> Singleton<State> {
-    singleton(storage, CONFIG_KEY)
-}
-
-pub fn config_read(storage: &dyn Storage) -> ReadonlySingleton<State> {
-    singleton_read(storage, CONFIG_KEY)
-}
+pub const CONFIG: Item<State> = Item::new("config");
 
 pub fn get_transfer_storage(storage: &mut dyn Storage) -> Bucket<Transfer> {
     bucket(storage, TRANSFER_KEY)

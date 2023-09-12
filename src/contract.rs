@@ -14,7 +14,7 @@ use provwasm_std::types::provenance::marker::v1::{
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
 use crate::state::{
-    config_read, get_all_transfers, get_transfer_storage, get_transfer_storage_read, Transfer,
+    CONFIG, get_all_transfers, get_transfer_storage, get_transfer_storage_read, Transfer,
 };
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
@@ -303,7 +303,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     msg.validate()?;
 
     match msg {
-        QueryMsg::GetContractInfo {} => to_binary(&config_read(deps.storage).load()?),
+        QueryMsg::GetContractInfo {} => to_binary(&CONFIG.load(deps.storage)?),
         QueryMsg::GetVersionInfo {} => to_binary(&cw2::get_contract_version(deps.storage)?),
         QueryMsg::GetTransfer { id: transfer_id } => {
             to_binary(&get_transfer_storage_read(deps.storage).load(transfer_id.as_bytes())?)
@@ -332,7 +332,7 @@ impl fmt::Display for Action {
 
 #[cfg(test)]
 mod tests {
-    use crate::state::{config, State};
+    use crate::state::{CONFIG, State};
     use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
     use cosmwasm_std::{coin, from_binary, Addr, CosmosMsg, Storage};
     use prost::Message;
@@ -1494,7 +1494,7 @@ mod tests {
             Ok(contract_info) => {
                 assert_eq!(
                     contract_info,
-                    to_binary(&config_read(&deps.storage).load().unwrap()).unwrap()
+                    to_binary(&CONFIG.load(&deps.storage).unwrap()).unwrap()
                 )
             }
             Err(error) => panic!("unexpected error: {:?}", error),
@@ -1625,7 +1625,7 @@ mod tests {
     }
 
     fn setup_test_base(storage: &mut dyn Storage, contract_info: &State) {
-        if let Err(error) = config(storage).save(&contract_info) {
+        if let Err(error) = CONFIG.save(storage, &contract_info) {
             panic!("unexpected error: {:?}", error)
         }
     }
