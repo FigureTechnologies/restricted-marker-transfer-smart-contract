@@ -13,9 +13,7 @@ use provwasm_std::types::provenance::marker::v1::{
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
-use crate::state::{
-    get_all_transfers, get_transfer_storage, get_transfer_storage_read, Transfer, CONFIG,
-};
+use crate::state::{get_all_transfers, Transfer, CONFIG, TRANSFER_STORAGE};
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
 pub const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -91,15 +89,16 @@ fn create_transfer(
         return Err(ContractError::InsufficientFunds);
     }
 
-    let mut transfer_storage = get_transfer_storage(deps.storage);
-
-    if transfer_storage.may_load(transfer.id.as_bytes())?.is_some() {
+    if TRANSFER_STORAGE
+        .may_load(deps.storage, transfer.id.as_bytes())?
+        .is_some()
+    {
         return Err(ContractError::InvalidFields {
             fields: vec![String::from("id")],
         });
     }
 
-    transfer_storage.save(transfer.id.as_bytes(), &transfer)?;
+    TRANSFER_STORAGE.save(deps.storage, transfer.id.as_bytes(), &transfer)?;
 
     let mut response = Response::new().add_attributes(vec![
         attr("action", Action::Transfer.to_string()),
@@ -131,9 +130,8 @@ pub fn cancel_transfer(
     info: MessageInfo,
     transfer_id: String,
 ) -> Result<Response, ContractError> {
-    let transfer_storage_read = get_transfer_storage_read(deps.storage);
-    let transfer = transfer_storage_read
-        .load(transfer_id.as_bytes())
+    let transfer = TRANSFER_STORAGE
+        .load(deps.storage, transfer_id.as_bytes())
         .map_err(|error| ContractError::LoadTransferFailed { error })?;
 
     if !info.funds.is_empty() {
@@ -167,7 +165,7 @@ pub fn cancel_transfer(
     });
 
     // finally remove the transfer from storage
-    get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
+    TRANSFER_STORAGE.remove(deps.storage, transfer_id.as_bytes());
 
     Ok(response)
 }
@@ -178,9 +176,8 @@ pub fn reject_transfer(
     info: MessageInfo,
     transfer_id: String,
 ) -> Result<Response, ContractError> {
-    let transfer_storage_read = get_transfer_storage_read(deps.storage);
-    let transfer = transfer_storage_read
-        .load(transfer_id.as_bytes())
+    let transfer = TRANSFER_STORAGE
+        .load(deps.storage, transfer_id.as_bytes())
         .map_err(|error| ContractError::LoadTransferFailed { error })?;
 
     if !info.funds.is_empty() {
@@ -218,7 +215,7 @@ pub fn reject_transfer(
     });
 
     // finally remove the transfer from storage
-    get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
+    TRANSFER_STORAGE.remove(deps.storage, transfer_id.as_bytes());
 
     Ok(response)
 }
@@ -229,9 +226,8 @@ pub fn approve_transfer(
     info: MessageInfo,
     transfer_id: String,
 ) -> Result<Response, ContractError> {
-    let transfer_storage_read = get_transfer_storage_read(deps.storage);
-    let transfer = transfer_storage_read
-        .load(transfer_id.as_bytes())
+    let transfer = TRANSFER_STORAGE
+        .load(deps.storage, transfer_id.as_bytes())
         .map_err(|error| ContractError::LoadTransferFailed { error })?;
 
     if !info.funds.is_empty() {
@@ -270,7 +266,7 @@ pub fn approve_transfer(
     });
 
     // finally remove the transfer from storage
-    get_transfer_storage(deps.storage).remove(transfer_id.as_bytes());
+    TRANSFER_STORAGE.remove(deps.storage, transfer_id.as_bytes());
     Ok(response)
 }
 
@@ -306,7 +302,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetContractInfo {} => to_binary(&CONFIG.load(deps.storage)?),
         QueryMsg::GetVersionInfo {} => to_binary(&cw2::get_contract_version(deps.storage)?),
         QueryMsg::GetTransfer { id: transfer_id } => {
-            to_binary(&get_transfer_storage_read(deps.storage).load(transfer_id.as_bytes())?)
+            to_binary(&TRANSFER_STORAGE.load(deps.storage, transfer_id.as_bytes())?)
         }
         QueryMsg::GetAllTransfers {} => to_binary(&get_all_transfers(deps.storage)),
     }
@@ -343,8 +339,6 @@ mod tests {
         Access, AccessGrant, MarkerStatus, MarkerType, QueryMarkerRequest, QueryMarkerResponse,
     };
     use std::convert::TryInto;
-
-    use crate::state::get_transfer_storage_read;
 
     use super::*;
 
@@ -436,9 +430,7 @@ mod tests {
         }
 
         // verify transfer stored
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
-
-        match transfer_storage.load(TRANSFER_ID.as_bytes()) {
+        match TRANSFER_STORAGE.load(&deps.storage, TRANSFER_ID.as_bytes()) {
             Ok(stored_transfer) => {
                 assert_eq!(
                     stored_transfer,
@@ -785,10 +777,11 @@ mod tests {
             }
         }
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             None,
-            transfer_storage.may_load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .may_load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -837,10 +830,11 @@ mod tests {
         // verify approve transfer response
         assert_sent_funds_unsupported_error(transfer_response);
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             stored_transfer,
-            transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -897,10 +891,11 @@ mod tests {
             },
         }
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             stored_transfer,
-            transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -1070,10 +1065,11 @@ mod tests {
             }
         }
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             None,
-            transfer_storage.may_load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .may_load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -1117,10 +1113,11 @@ mod tests {
         // verify cancel transfer response
         assert_sent_funds_unsupported_error(transfer_response);
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             stored_transfer,
-            transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -1170,10 +1167,11 @@ mod tests {
             },
         }
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             stored_transfer,
-            transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -1298,10 +1296,11 @@ mod tests {
             }
         }
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             None,
-            transfer_storage.may_load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .may_load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -1349,10 +1348,11 @@ mod tests {
 
         assert_sent_funds_unsupported_error(reject_response);
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             stored_transfer,
-            transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -1407,10 +1407,11 @@ mod tests {
             },
         }
 
-        let transfer_storage = get_transfer_storage_read(&deps.storage);
         assert_eq!(
             stored_transfer,
-            transfer_storage.load(TRANSFER_ID.as_bytes()).unwrap()
+            TRANSFER_STORAGE
+                .load(&deps.storage, TRANSFER_ID.as_bytes())
+                .unwrap()
         );
     }
 
@@ -1631,8 +1632,7 @@ mod tests {
     }
 
     fn store_test_transfer(storage: &mut dyn Storage, transfer: &Transfer) {
-        let mut transfer_storage = get_transfer_storage(storage);
-        if let Err(error) = transfer_storage.save(transfer.id.as_bytes(), transfer) {
+        if let Err(error) = TRANSFER_STORAGE.save(storage, transfer.id.as_bytes(), transfer) {
             panic!("unexpected error: {:?}", error)
         };
     }
