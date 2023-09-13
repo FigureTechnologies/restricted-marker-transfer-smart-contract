@@ -1,6 +1,6 @@
-use std::convert::Into;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::convert::Into;
 
 use cosmwasm_std::{Addr, Storage, Uint128};
 use cosmwasm_storage::{
@@ -68,12 +68,9 @@ mod tests {
     fn migrate_test() {
         let mut deps = mock_provenance_dependencies();
 
-        if let Err(error) = config(&mut deps.storage).save(
-        &State {
-                name: "contract_name".into(),
-            },
-        )
-        {
+        if let Err(error) = config(&mut deps.storage).save(&State {
+            name: "contract_name".into(),
+        }) {
             panic!("unexpected error: {:?}", error)
         }
 
@@ -93,16 +90,17 @@ mod tests {
             b"aaa",
             &State {
                 name: "contract_name".into(),
-            }
+            },
         ) {
             panic!("unexpected error: {:?}", error)
         }
 
         const ASKS_V1: Map<&[u8], State> = Map::new("asks");
 
-
         assert_eq!(
-            get_ask_storage_read(&mut deps.storage).load(b"aaa").unwrap(),
+            get_ask_storage_read(&mut deps.storage)
+                .load(b"aaa")
+                .unwrap(),
             ASKS_V1.load(&deps.storage, b"aaa").unwrap()
         )
     }

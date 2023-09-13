@@ -3,11 +3,11 @@ use cw2::set_contract_version;
 use cw_storage_plus::Item;
 use semver::{Version, VersionReq};
 
-use crate::contract::{ CRATE_NAME, PACKAGE_VERSION};
-use crate::ContractError::{InvalidContractType, UnsupportedUpgrade};
+use crate::contract::{CRATE_NAME, PACKAGE_VERSION};
 use crate::error::ContractError;
 use crate::msg::MigrateMsg;
-use crate::state::{CONFIG, State};
+use crate::state::{State, CONFIG};
+use crate::ContractError::{InvalidContractType, UnsupportedUpgrade};
 
 #[entry_point]
 pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, ContractError> {
@@ -21,9 +21,10 @@ pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, C
     let new_version = PACKAGE_VERSION.parse::<Version>().unwrap();
     let current_version = stored_contract_version.version.parse::<Version>().unwrap();
     if current_version > new_version {
-        return Err(
-            UnsupportedUpgrade { source_version: stored_contract_version.version, target_version: new_version.to_string() }
-        );
+        return Err(UnsupportedUpgrade {
+            source_version: stored_contract_version.version,
+            target_version: new_version.to_string(),
+        });
     }
 
     let config_migration_req = VersionReq::parse("<0.3.0").unwrap();
@@ -83,7 +84,9 @@ mod tests {
 
         // store legacy config state.
         const LEGACY_CONFIG: Item<State> = Item::new("\0\u{6}config");
-        LEGACY_CONFIG.save(&mut deps.storage, &contract_info).unwrap();
+        LEGACY_CONFIG
+            .save(&mut deps.storage, &contract_info)
+            .unwrap();
 
         set_contract_version(deps.as_mut().storage, CRATE_NAME, "0.2.0").unwrap();
 
@@ -124,19 +127,15 @@ mod tests {
 
         let migrate_response = migrate(deps.as_mut(), mock_env(), MigrateMsg {});
 
-
-
         match migrate_response {
             Ok(..) => panic!("migration should fail when the version is decreasing"),
             Err(error) => match error {
                 UnsupportedUpgrade {
                     source_version: current_version,
-                    target_version: new_version
+                    target_version: new_version,
                 } => {}
                 error => panic!("unexpected error: {:?}", error),
             },
         }
     }
-
-
 }

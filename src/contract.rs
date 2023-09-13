@@ -14,7 +14,7 @@ use provwasm_std::types::provenance::marker::v1::{
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, QueryMsg, Validate};
 use crate::state::{
-    CONFIG, get_all_transfers, get_transfer_storage, get_transfer_storage_read, Transfer,
+    get_all_transfers, get_transfer_storage, get_transfer_storage_read, Transfer, CONFIG,
 };
 
 pub const CRATE_NAME: &str = env!("CARGO_CRATE_NAME");
@@ -332,7 +332,7 @@ impl fmt::Display for Action {
 
 #[cfg(test)]
 mod tests {
-    use crate::state::{CONFIG, State};
+    use crate::state::{State, CONFIG};
     use cosmwasm_std::testing::{mock_env, mock_info, MOCK_CONTRACT_ADDR};
     use cosmwasm_std::{coin, from_binary, Addr, CosmosMsg, Storage};
     use prost::Message;

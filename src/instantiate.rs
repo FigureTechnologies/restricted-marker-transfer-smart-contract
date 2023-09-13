@@ -1,7 +1,7 @@
 use crate::contract::{CRATE_NAME, PACKAGE_VERSION};
 use crate::error::contract_err;
 use crate::msg::{InstantiateMsg, Validate};
-use crate::state::{CONFIG, State};
+use crate::state::{State, CONFIG};
 use crate::ContractError;
 use cosmwasm_std::{attr, entry_point, DepsMut, Env, MessageInfo, Response};
 use cw2::set_contract_version;
@@ -27,10 +27,7 @@ pub fn instantiate(
 
     // build response
     Ok(Response::new().add_attributes(vec![
-        attr(
-            "contract_info",
-            format!("{:?}", CONFIG.load(deps.storage)?),
-        ),
+        attr("contract_info", format!("{:?}", CONFIG.load(deps.storage)?)),
         attr("action", "init"),
     ]))
 }
