@@ -59,7 +59,6 @@ pub fn get_all_transfers(storage: &dyn Storage) -> Vec<Transfer> {
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::testing::mock_env;
     use cw_storage_plus::Map;
     use provwasm_mocks::mock_provenance_dependencies;
 
@@ -78,9 +77,11 @@ mod tests {
             panic!("unexpected error: {:?}", error)
         }
 
+        const UNMIGRATED_CONFIG: Item<State> = Item::new("\0\u{6}config");
+
         assert_eq!(
             config_read(&mut deps.storage).load().unwrap(),
-            CONFIG.load(&deps.storage).unwrap()
+            UNMIGRATED_CONFIG.load(&deps.storage).unwrap()
         )
     }
 
