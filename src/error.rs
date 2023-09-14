@@ -6,6 +6,9 @@ pub enum ContractError {
     #[error("Insufficient funds to complete the transfer")]
     InsufficientFunds,
 
+    #[error("Can only upgrade from same type")]
+    InvalidContractType,
+
     #[error("Invalid fields: {fields:?}")]
     InvalidFields { fields: Vec<String> },
 

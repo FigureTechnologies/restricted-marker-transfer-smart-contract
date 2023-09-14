@@ -1,15 +1,11 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::convert::Into;
 
 use cosmwasm_std::{Addr, Storage, Uint128};
-use cosmwasm_storage::{
-    bucket, bucket_read, singleton, singleton_read, Bucket, ReadonlyBucket, ReadonlySingleton,
-    Singleton,
-};
+use cw_storage_plus::{Item, Map};
 
-pub static CONFIG_KEY: &[u8] = b"config";
-
-pub static TRANSFER_KEY: &[u8] = b"transfer";
+pub const STORAGE_TRANSFER_KEY: &str = "transfer";
 
 /// Configuration state for the restricted marker transfer contract.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -28,26 +24,13 @@ pub struct Transfer {
     pub recipient: Addr,
 }
 
-pub fn config(storage: &mut dyn Storage) -> Singleton<State> {
-    singleton(storage, CONFIG_KEY)
-}
+pub const CONFIG: Item<State> = Item::new("config");
 
-pub fn config_read(storage: &dyn Storage) -> ReadonlySingleton<State> {
-    singleton_read(storage, CONFIG_KEY)
-}
-
-pub fn get_transfer_storage(storage: &mut dyn Storage) -> Bucket<Transfer> {
-    bucket(storage, TRANSFER_KEY)
-}
-
-pub fn get_transfer_storage_read(storage: &dyn Storage) -> ReadonlyBucket<Transfer> {
-    bucket_read(storage, TRANSFER_KEY)
-}
+pub const TRANSFER_STORAGE: Map<&[u8], Transfer> = Map::new(STORAGE_TRANSFER_KEY);
 
 pub fn get_all_transfers(storage: &dyn Storage) -> Vec<Transfer> {
-    let stored = get_transfer_storage_read(storage);
-    stored
-        .range(None, None, cosmwasm_std::Order::Ascending)
+    TRANSFER_STORAGE
+        .range(storage, None, None, cosmwasm_std::Order::Ascending)
         .map(|pair| pair.unwrap().1)
         .collect()
 }

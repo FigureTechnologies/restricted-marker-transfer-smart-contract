@@ -17,7 +17,7 @@ This contract facilitates the transfer of restricted coin between addresses.
 
 ## Background
 
-As a holder of a restricted marker, there is no way to transfer those coins without being granted marker transfer permissions or having an account with the permissions to initiate the transfer. This contract allows an account that holds a restricted marker to initiate a transfer that can then be approved or rejected by a marker admin. 
+As a holder of a restricted marker, there is no way to transfer those coins without being granted marker transfer permissions or having an account with the permissions to initiate the transfer. This contract allows an account that holds a restricted marker to initiate a transfer that can then be approved or rejected by a marker admin.
 
 ## Assumptions
 
@@ -36,11 +36,11 @@ for details.
 
 ## Blockchain Quickstart
 
-Checkout provenance v1.10.0, install the `provenanced` command and start a 4-node localnet.
+Checkout provenance v1.16.0, install the `provenanced` command and start a 4-node localnet.
 
 ```bash
 git clone https://github.com/provenance-io/provenance.git
-cd provenance && git checkout v1.10.0
+cd provenance && git checkout v1.16.0
 make install
 make localnet-start
 ```
@@ -306,6 +306,18 @@ provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpct
     --testnet \
     --yes -o json | jq
 ```
+
+### Query transfers
+
+query all pending transfers
+```bash
+provenanced q wasm contract-state smart tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
+    '{"get_all_transfers":{}}' \
+    --ascii -o json \
+    --chain-id chain-local \
+    --testnet | jq
+```
+
 ### Approve
 Now the marker admin can approve the transfer
 ```bash
