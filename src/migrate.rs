@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn test_migrate_invalid_version() {
         let mut deps = mock_provenance_dependencies();
-        let current_version: String = "1.1.0".into();
+        let current_version: String = "999.0.0".into();
         let new_version: String = String::from(PACKAGE_VERSION);
 
         set_contract_version(deps.as_mut().storage, CRATE_NAME, current_version).unwrap();
