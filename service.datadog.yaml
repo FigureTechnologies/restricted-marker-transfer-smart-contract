@@ -1,6 +1,6 @@
 schema-version: v2
 dd-service: restricted-marker-transfer-smart-contract
-team: fes-backend
+team: backend-markets-smart-contracts
 contacts:
 - type: slack
   contact: https://figure-group.slack.com/archives/C0172N96LE6
@@ -11,4 +11,4 @@ repos:
 docs:
 - name: GitHub Team
   provider: github
-  url: https://github.com/orgs/FigureTechnologies/teams/fes-backend/members
+  url: https://github.com/orgs/FigureTechnologies/teams/backend-markets-smart-contracts/members
