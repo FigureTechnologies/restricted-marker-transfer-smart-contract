@@ -34,7 +34,7 @@ for details.
 | 0.1.0            | 157     |
 | 0.1.1            | 166     |
 | 1.0.0            | 552     |
-| 2.0.0            | TBD     |
+| 2.0.0            | 584     |
 
 ## Blockchain Quickstart
 
