@@ -17,7 +17,7 @@ This contract facilitates the transfer of restricted coin between addresses.
 
 ## Background
 
-As a holder of a restricted marker, there is no way to transfer those coins without being granted marker transfer permissions or having an account with the permissions to initiate the transfer. This contract allows an account that holds a restricted marker to initiate a transfer that can then be approved or rejected by a marker admin.
+As a holder of a restricted marker, there is no way to transfer those coins without being granted marker transfer permissions or having an account with the permissions to initiate the transfer. This contract allows an account that holds a restricted marker to initiate a transfer that can then be approved or rejected by an account with transfer permission.
 
 ## Assumptions
 
@@ -34,6 +34,7 @@ for details.
 | 0.1.0            | 157     |
 | 0.1.1            | 166     |
 | 1.0.0            | 552     |
+| 2.0.0            | TBD     |
 
 ## Blockchain Quickstart
 
@@ -48,7 +49,7 @@ make localnet-start
 
 ## Accounts
 
-Accounts need to be set up for example users and marker admins.
+Accounts need to be set up for example users and marker transfer.
 
 User 1
 
@@ -220,7 +221,7 @@ provenanced tx marker new "50000example-co.stock" \
   --testnet \
   --yes
 ```
-Grant marker admin access to `admin1`
+Grant marker admin and transfer access to `admin1`
 ```bash
 provenanced tx marker grant $(provenanced keys show -a admin1 --home build/node0 --keyring-backend test --testnet) example-co.stock admin,withdraw,burn,mint,transfer \
   --from admin1 \
@@ -320,7 +321,7 @@ provenanced q wasm contract-state smart tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0
 ```
 
 ### Approve
-Now the marker admin can approve the transfer
+Now the account with transfer permission can approve the transfer
 ```bash
 provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
     '{"approve_transfer":{"id":"54c4f5d9-5253-43ac-9011-bbc52465581e"}}' \
@@ -349,7 +350,7 @@ provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpct
     --yes -o json | jq
 ```
 ### Reject
-The marker admin can reject a transfer:
+The account with transfer permission can reject a transfer:
 ```bash
 provenanced tx wasm execute tp15fnweczx7273jc6tmuuacmkl6zk6mq8ffh8r0artxp9srdpctcesek7uac \
     '{"reject_transfer":{"id":"54c4f5d9-5253-43ac-9011-bbc52465581e"}}' \

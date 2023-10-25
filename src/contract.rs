@@ -187,9 +187,9 @@ pub fn reject_transfer(
     let querier = MarkerQuerier::new(&deps.querier);
     let marker = get_marker_by_denom(transfer.denom.clone(), &querier)?;
 
-    if !is_marker_admin(info.sender.to_owned(), marker) {
+    if !has_marker_access_transfer(info.sender.to_owned(), marker) {
         return Err(ContractError::Unauthorized {
-            error: String::from("MARKER_ADMIN permission is required to reject transfers"),
+            error: String::from("ACCESS_TRANSFER permission is required to reject transfers"),
         });
     }
 
@@ -237,9 +237,9 @@ pub fn approve_transfer(
     let querier = MarkerQuerier::new(&deps.querier);
     let marker = get_marker_by_denom(transfer.denom.clone(), &querier)?;
 
-    if !is_marker_admin(info.sender.to_owned(), marker) {
+    if !has_marker_access_transfer(info.sender.to_owned(), marker) {
         return Err(ContractError::Unauthorized {
-            error: String::from("MARKER_ADMIN permission is required to approve transfers"),
+            error: String::from("ACCESS_TRANSFER permission is required to approve transfers"),
         });
     }
 
@@ -270,15 +270,15 @@ pub fn approve_transfer(
     Ok(response)
 }
 
-/// returns true if the sender has marker admin permissions for the given marker
-fn is_marker_admin(sender: Addr, marker: MarkerAccount) -> bool {
-    let access_admin: i32 = Access::Admin.into();
+/// returns true if the sender has marker transfer permissions for the given marker
+fn has_marker_access_transfer(sender: Addr, marker: MarkerAccount) -> bool {
+    let access_transfer: i32 = Access::Transfer.into();
     marker.access_control.iter().any(|grant| {
         grant.address == sender
             && grant
                 .permissions
                 .iter()
-                .any(|marker_access| *marker_access == access_admin)
+                .any(|marker_access| *marker_access == access_transfer)
     })
 }
 
@@ -696,16 +696,16 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_address");
+        let transfer_address = Addr::unchecked("transfer_address");
         let sender_address = Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: MarkerAccount =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
         mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
-        let sender_info = mock_info(admin_address.as_str(), &[]);
+        let sender_info = mock_info(transfer_address.as_str(), &[]);
 
         store_test_transfer(
             &mut deps.storage,
@@ -751,7 +751,7 @@ mod tests {
                     response.attributes[5],
                     attr("recipient", recipient_address.to_owned())
                 );
-                assert_eq!(response.attributes[6], attr("admin", admin_address));
+                assert_eq!(response.attributes[6], attr("admin", transfer_address));
 
                 assert_eq!(response.messages.len(), 1);
 
@@ -795,16 +795,16 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_address");
+        let transfer_address = Addr::unchecked("transfer_address");
         let sender_address = Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: MarkerAccount =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
         mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
-        let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
+        let sender_info = mock_info(transfer_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
 
         let stored_transfer = Transfer {
             id: TRANSFER_ID.into(),
@@ -848,13 +848,13 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_address");
+        let transfer_address = Addr::unchecked("transfer_address");
         let approver_address = Addr::unchecked("approver_address");
         let sender_address = Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: MarkerAccount =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
         mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(1);
@@ -909,8 +909,8 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_address");
-        let sender_info = mock_info(admin_address.as_str(), &[]);
+        let transfer_address = Addr::unchecked("transfer_address");
+        let sender_info = mock_info(transfer_address.as_str(), &[]);
 
         let approve_transfer_msg = ExecuteMsg::ApproveTransfer {
             id: TRANSFER_ID.into(),
@@ -928,31 +928,31 @@ mod tests {
     }
 
     #[test]
-    fn is_marker_admin_success() {
-        let admin_address = Addr::unchecked("admin_address");
+    fn has_marker_access_transfer_success() {
+        let transfer_address = Addr::unchecked("transfer_address");
         let test_marker: MarkerAccount =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
-        assert!(is_marker_admin(
-            admin_address.to_owned(),
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
+        assert!(has_marker_access_transfer(
+            transfer_address.to_owned(),
             test_marker.into()
         ))
     }
 
     #[test]
-    fn is_marker_admin_returns_false_with_no_permission() {
-        let admin_address = Addr::unchecked("admin_address");
+    fn has_marker_access_transfer_returns_false_with_no_permission() {
+        let transfer_address = Addr::unchecked("transfer_address");
         let other_address = Addr::unchecked("other_address");
         let test_marker: MarkerAccount =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
         assert_eq!(
             false,
-            is_marker_admin(other_address.to_owned(), test_marker.into())
+            has_marker_access_transfer(other_address.to_owned(), test_marker.into())
         )
     }
 
     #[test]
-    fn is_marker_admin_returns_false_without_admin_permission() {
-        let non_admin_address = Addr::unchecked("some_address_without_admin");
+    fn has_marker_access_transfer_returns_false_without_transfer_permission() {
+        let non_transfer_address = Addr::unchecked("some_address_without_transfer");
         let test_marker: MarkerAccount = MarkerAccount {
             base_account: Some(BaseAccount {
                 address: "tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ".to_string(),
@@ -962,8 +962,8 @@ mod tests {
             }),
             manager: "tp13pnzut8zdjaqht7aqe7kk4ww5zfq04jzlytnmu".to_string(),
             access_control: vec![AccessGrant {
-                address: "some_address_without_admin".to_string(),
-                permissions: vec![(Access::Transfer).into()],
+                address: "some_address_without_transfer".to_string(),
+                permissions: vec![(Access::Admin).into()],
             }],
             status: 0,
             denom: "restricted_1".to_string(),
@@ -977,7 +977,7 @@ mod tests {
 
         assert_eq!(
             false,
-            is_marker_admin(non_admin_address.to_owned(), test_marker.into())
+            has_marker_access_transfer(non_transfer_address.to_owned(), test_marker.into())
         )
     }
 
@@ -1214,15 +1214,15 @@ mod tests {
         );
 
         let sender_address = Addr::unchecked("sender_address");
-        let admin_address = Addr::unchecked("admin_address");
+        let transfer_address = Addr::unchecked("transfer_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: MarkerAccount =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
         mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
-        let sender_info = mock_info(admin_address.as_str(), &[]);
+        let sender_info = mock_info(transfer_address.as_str(), &[]);
 
         store_test_transfer(
             &mut deps.storage,
@@ -1269,7 +1269,7 @@ mod tests {
                 );
                 assert_eq!(
                     response.attributes[5],
-                    attr("admin", admin_address.to_owned())
+                    attr("admin", transfer_address.to_owned())
                 );
 
                 assert_eq!(response.messages.len(), 1);
@@ -1315,15 +1315,15 @@ mod tests {
         );
 
         let sender_address = Addr::unchecked("sender_address");
-        let admin_address = Addr::unchecked("admin_address");
+        let transfer_address = Addr::unchecked("transfer_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker: MarkerAccount =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
         mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
-        let sender_info = mock_info(admin_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
+        let sender_info = mock_info(transfer_address.as_str(), &[coin(1, RESTRICTED_DENOM)]);
 
         let stored_transfer = Transfer {
             id: TRANSFER_ID.into(),
@@ -1366,12 +1366,12 @@ mod tests {
             },
         );
 
-        let admin_address = Addr::unchecked("admin_address");
+        let transfer_address = Addr::unchecked("transfer_address");
         let sender_address = Addr::unchecked("sender_address");
         let recipient_address = Addr::unchecked("transfer_to");
 
         let test_marker =
-            setup_restricted_marker_admin(RESTRICTED_DENOM.into(), admin_address.to_owned());
+            setup_restricted_marker_transfer(RESTRICTED_DENOM.into(), transfer_address.to_owned());
         mock_query_marker_response(&test_marker, &mut deps.querier);
 
         let amount = Uint128::new(3);
@@ -1652,7 +1652,7 @@ mod tests {
                     Access::Burn.into(),
                     Access::Delete.into(),
                     Access::Deposit.into(),
-                    Access::Admin.into(),
+                    Access::Transfer.into(),
                     Access::Mint.into(),
                     Access::Withdraw.into(),
                 ],
@@ -1668,7 +1668,7 @@ mod tests {
         };
     }
 
-    fn setup_restricted_marker_admin(denom: String, admin: Addr) -> MarkerAccount {
+    fn setup_restricted_marker_transfer(denom: String, admin: Addr) -> MarkerAccount {
         return MarkerAccount {
             base_account: Some(BaseAccount {
                 address: "tp1l330sxue4suxz9dhc40e2pns0ymrytf8uz4squ".to_string(),
@@ -1683,7 +1683,7 @@ mod tests {
                     Access::Burn.into(),
                     Access::Delete.into(),
                     Access::Deposit.into(),
-                    Access::Admin.into(),
+                    Access::Transfer.into(),
                     Access::Mint.into(),
                     Access::Withdraw.into(),
                 ],
