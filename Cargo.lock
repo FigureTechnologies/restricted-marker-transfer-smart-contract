@@ -656,6 +656,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac47baaef3631368888abc13a62cb6d42b88bfd5c3fc6f920a9cbe4d7d3ddc9d"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "prost-derive"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -777,7 +786,7 @@ dependencies = [
  "cw-multi-test",
  "cw-storage-plus",
  "cw2",
- "prost 0.11.9",
+ "prost 0.13.0",
  "provwasm-mocks",
  "provwasm-std",
  "schemars",
