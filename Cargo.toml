@@ -53,6 +53,6 @@ uuid = { version= "1.4.1" }
 
 [dev-dependencies]
 prost = {version = "0.11.0", default-features = false}
-cosmwasm-schema = { version = "=1.4.0" }
+cosmwasm-schema = { version = "=1.5.8" }
 provwasm-mocks = { version = "2.0.0" }
 cw-multi-test = "0.16.5"
